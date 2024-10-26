@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image to ICS Converter</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+            line-height: 1.5;
+        }
+
+        .drop-zone {
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            padding: 2rem;
+            text-align: center;
+            margin: 2rem 0;
+            background: #f9f9f9;
+            cursor: pointer;
+            transition: background 0.3s ease;
+        }
+
+        .drop-zone:hover {
+            background: #f0f0f0;
+        }
+
+        .drop-zone.drag-over {
+            background: #e0e0e0;
+            border-color: #999;
+        }
+
+        #api-key-form {
+            margin: 2rem 0;
+        }
+
+        .api-key-status {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 0.5rem;
+            margin: 0.5rem 0;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.2s;
+        }
+
+        button:hover {
+            background: #0056b3;
+        }
+
+        #output-container {
+            margin-top: 2rem;
+            display: none;
+        }
+
+        #output-container.visible {
+            display: block;
+        }
+
+        .output-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .output-header h2 {
+            margin: 0;
+            font-size: 1.2rem;
+            color: #333;
+        }
+
+        .output-header button {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .output-header button::before {
+            content: "⬇️";
+        }
+
+        #output {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 6px;
+            padding: 1rem;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+            font-size: 0.9rem;
+            line-height: 1.5;
+            color: #212529;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 2rem 0;
+        }
+
+        .loading::after {
+            content: '';
+            display: inline-block;
+            width: 1.5rem;
+            height: 1.5rem;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #007bff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        .error {
+            color: #dc3545;
+            padding: 1rem;
+            border: 1px solid #dc3545;
+            border-radius: 4px;
+            margin-top: 1rem;
+            background: #fde8e8;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+
+        .secondary-button {
+            background: #6c757d;
+        }
+
+        .secondary-button:hover {
+            background: #5a6268;
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 4rem;
+        }
+    </style>
+</head>
+<body>
+    <h1>Image to ICS Converter</h1>
+
+    <div id="api-key-form" class="api-key-form">
+        <div id="api-key-input" class="api-key-input">
+            <label for="api-key">Claude API Key:</label>
+            <input type="text" id="api-key" placeholder="Enter your Claude API key">
+            <div style="font-size: 0.8rem; color: #666; margin-bottom: 0.5rem;">
+                API key is only sent to Claude API and stored in Local Storage. But don't trust me, please view the code before providing your API key.
+            </div>
+            <button onclick="setApiKey()">Set API Key</button>
+        </div>
+        <div id="api-key-status" class="api-key-status hidden">
+            <span>✅ API Key Set</span>
+            <button onclick="changeApiKey()">Change API Key</button>
+        </div>
+    </div>
+
+    <div id="drop-zone" class="drop-zone hidden">
+        Drag and drop an image here or click to select a file<br>
+        (You can also paste an image or HTML from clipboard)
+    </div>
+
+    <div id="prompt-extension" class="hidden">
+        <label for="additional-prompt">Additional Instructions (optional):</label>
+        <textarea 
+            id="additional-prompt" 
+            rows="3" 
+            class="w-full p-2 border rounded"
+            placeholder="Add any additional instructions for Claude here..."
+            style="width: 100%; padding: 0.5rem; margin: 0.5rem 0; border: 1px solid #ccc; border-radius: 4px; font-family: inherit;"
+        ></textarea>
+    </div>
+
+    <div id="loading" class="loading"></div>
+    
+    <div id="output-container">
+        <div class="output-header">
+            <h2>Generated ICS File</h2>
+            <div class="action-buttons">
+                <button id="regenerate-button" class="secondary-button">🔄 Regenerate</button>
+                <button id="download-button">⬇️ Download ICS File</button>
+            </div>
+        </div>
+
+        <div id="output"></div>
+    </div>
+
+    <script>
+        const prompt = `Given event/travel data, create a valid ICS file that contains all of the events in a single file. Do not run code. Just produce the ICS file as a code block.
+For flights:
+- Title format: ✈️ FLIGHT: APT1->APT2 (FLIGHTNO, Conf: ####)
+- APT1/APT2 are airport codes
+- FLIGHTNO is like UA1234
+- Conf: is the confirmation code / booking reference or UNKNOWN
+- Only include the individual legs of the flight, not the overall trip.
+For other transportation: use an appropriate emoji, and follow the same pattern as for flights
+For other event types:, use an appropriate emoji, and an appropriate title, with a summary word like HOTEL.
+For the description: Always include the summarized details of the event including dates, times, timezones, locations, and key details of the event.
+ONLY write the ICS file and no commentary. Only comment if there is a problem extracting the necessary data - if there is a problem you can ask clarifying questions. Once answered, only generate an ICS file as a code block.
+Always produce timestamps using localized times like "US/New York" appropriate for the event. Do not use "Z". Always specify a timezone. Events can have different start and end timezones based on the locations involved.
+
+For PRODID, use tools.bafford.us
+For UID, use YYYYMMDD-COMPANY-TYPE
+`;
+
+        let apiKey = '';
+        const apiKeyInput = document.getElementById('api-key-input');
+        const apiKeyStatus = document.getElementById('api-key-status');
+        const dropZone = document.getElementById('drop-zone');
+        const loading = document.getElementById('loading');
+        const output = document.getElementById('output');
+        const outputContainer = document.getElementById('output-container');
+        const downloadButton = document.getElementById('download-button');
+
+        let lastProcessedContent = null;
+        let lastProcessedType = null; // 'image' or 'text'
+        const promptExtension = document.getElementById('prompt-extension');
+        const regenerateButton = document.getElementById('regenerate-button');
+
+        function showPromptExtension() {
+            promptExtension.classList.remove('hidden');
+        }
+
+        // Try to load API key on startup
+        try {
+            const savedKey = localStorage.getItem('claudeApiKey');
+            if (savedKey) {
+                apiKey = savedKey;
+                apiKeyInput.classList.add('hidden');
+                apiKeyStatus.classList.remove('hidden');
+                dropZone.classList.remove('hidden');
+                promptExtension.classList.remove('hidden');
+            }
+        } catch (error) {
+            console.warn('Could not access localStorage:', error);
+        }
+
+        function setApiKey() {
+            const inputKey = document.getElementById('api-key').value.trim();
+            if (inputKey) {
+                apiKey = inputKey;
+                try {
+                    localStorage.setItem('claudeApiKey', apiKey);
+                } catch (error) {
+                    console.warn('Could not save to localStorage:', error);
+                }
+                apiKeyInput.classList.add('hidden');
+                apiKeyStatus.classList.remove('hidden');
+                dropZone.classList.remove('hidden');
+                promptExtension.classList.remove('hidden');
+                document.getElementById('api-key').value = '';
+            } else {
+                alert('Please enter a valid API key');
+            }
+        }
+
+        function changeApiKey() {
+            apiKey = '';
+            try {
+                localStorage.removeItem('claudeApiKey');
+            } catch (error) {
+                console.warn('Could not remove from localStorage:', error);
+            }
+            apiKeyInput.classList.remove('hidden');
+            apiKeyStatus.classList.add('hidden');
+            dropZone.classList.add('hidden');
+            promptExtension.classList.add('hidden');
+            outputContainer.style.display = 'none';
+        }
+
+        // Handle drag and drop
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('drag-over');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('drag-over');
+        });
+
+        dropZone.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('drag-over');
+            const file = e.dataTransfer.files[0];
+            if (file && file.type.startsWith('image/')) {
+                await processImage(file);
+            }
+        });
+
+        regenerateButton.addEventListener('click', async () => {
+            if (lastProcessedContent && lastProcessedType) {
+                if (lastProcessedType === 'image') {
+                    await processImage(lastProcessedContent);
+                } else {
+                    await processText(lastProcessedContent);
+                }
+            }
+        });
+
+        // Handle click to upload
+        dropZone.addEventListener('click', () => {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = 'image/*';
+            input.onchange = async (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    await processImage(file);
+                }
+            };
+            input.click();
+        });
+
+        // Handle paste
+        document.addEventListener('paste', async (e) => {
+            if (!apiKey) return;
+            
+            // Check for image content first
+            const items = e.clipboardData.items;
+            for (const item of items) {
+                if (item.type.startsWith('image/')) {
+                    const file = item.getAsFile();
+                    await processImage(file);
+                    return;
+                }
+            }
+
+            // Check for HTML or text content
+            const html = e.clipboardData.getData('text/html');
+            const text = e.clipboardData.getData('text/plain');
+            
+            if (html || text) {
+                await processText(html || text);
+            }
+        });
+
+        let currentIcsContent = '';
+
+        downloadButton.addEventListener('click', () => {
+            if (!currentIcsContent) return;
+            
+            const blob = new Blob([currentIcsContent], { type: 'text/calendar' });
+            const url = URL.createObjectURL(blob);
+            const downloadLink = document.createElement('a');
+            downloadLink.href = url;
+            downloadLink.download = 'events.ics';
+            document.body.appendChild(downloadLink);
+            downloadLink.click();
+            document.body.removeChild(downloadLink);
+            URL.revokeObjectURL(url);
+        });
+
+        async function processImage(file) {
+            if (!apiKey) {
+                alert('Please set your Claude API key');
+                return;
+            }
+
+            lastProcessedContent = file;
+            lastProcessedType = 'image';
+            showPromptExtension();
+
+            loading.style.display = 'block';
+            output.textContent = '';
+            outputContainer.style.display = 'none';
+
+            try {
+                // Convert image to base64
+                const base64Image = await new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => resolve(e.target.result.split(',')[1]);
+                    reader.readAsDataURL(file);
+                });
+
+                const additionalPrompt = document.getElementById('additional-prompt').value.trim();
+                const promptExtension = additionalPrompt ? `\nAdditional Instructions: ${additionalPrompt}` : '';
+
+                const response = await fetch('https://api.anthropic.com/v1/messages', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-api-key': apiKey,
+                        'anthropic-version': '2023-06-01',
+                        'anthropic-dangerous-direct-browser-access': 'true'
+                    },
+                    body: JSON.stringify({
+                        model: 'claude-3-opus-20240229',
+                        max_tokens: 4096,
+                        messages: [{
+                            role: 'user',
+                            content: [
+                                {
+                                    type: 'text',
+                                    text: `${prompt}\n${promptExtension}`
+                                },
+                                {
+                                    type: 'image',
+                                    source: {
+                                        type: 'base64',
+                                        media_type: file.type,
+                                        data: base64Image
+                                    }
+                                }
+                            ]
+                        }]
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error?.message || 'API request failed');
+                }
+
+                const content = data.content[0].text;
+                
+                // Extract ICS content from between code blocks if present
+                let icsContent = content;
+                const match = content.match(/```(?:ics)?\n([\s\S]*?)```/);
+                if (match) {
+                    icsContent = match[1].trim();
+                }
+
+                currentIcsContent = icsContent;
+                output.textContent = icsContent;
+                outputContainer.style.display = 'block';
+
+            } catch (error) {
+                output.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+                outputContainer.style.display = 'block';
+            } finally {
+                loading.style.display = 'none';
+            }
+        }
+
+       async function processText(content) {
+            if (!apiKey) {
+                alert('Please set your Claude API key');
+                return;
+            }
+
+            lastProcessedContent = content;
+            lastProcessedType = 'text';
+            showPromptExtension();
+
+            loading.style.display = 'block';
+            output.textContent = '';
+            outputContainer.style.display = 'none';
+
+            try {
+                const additionalPrompt = document.getElementById('additional-prompt').value.trim();
+                const promptExtension = additionalPrompt ? `\nAdditional Instructions: ${additionalPrompt}` : '';
+
+                const response = await fetch('https://api.anthropic.com/v1/messages', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-api-key': apiKey,
+                        'anthropic-version': '2023-06-01',
+                        'anthropic-dangerous-direct-browser-access': 'true'
+                    },
+                    body: JSON.stringify({
+                        model: 'claude-3-opus-20240229',
+                        max_tokens: 4096,
+                        messages: [{
+                            role: 'user',
+                            content: [
+                                {
+                                    type: 'text',
+                                    text: `${prompt}\n${promptExtension}\nHere is the content to process:\n${content}`
+                                }
+                            ]
+                        }]
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error?.message || 'API request failed');
+                }
+
+                const responseContent = data.content[0].text;
+                
+                // Extract ICS content from between code blocks if present
+                let icsContent = responseContent;
+                const match = responseContent.match(/```(?:ics)?\n([\s\S]*?)```/);
+                if (match) {
+                    icsContent = match[1].trim();
+                }
+
+                currentIcsContent = icsContent;
+                output.textContent = icsContent;
+                outputContainer.style.display = 'block';
+
+            } catch (error) {
+                output.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+                outputContainer.style.display = 'block';
+            } finally {
+                loading.style.display = 'none';
+            }
+        }
+    </script>
+</body>
+</html>

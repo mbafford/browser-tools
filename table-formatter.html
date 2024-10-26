@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Table Format Converter</title>
+    <style>
+    /* Previous styles remain the same */
+    body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+        .container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        .dropzone {
+            border: 2px dashed #ccc;
+            border-radius: 0.5rem;
+            padding: 2rem;
+            text-align: center;
+            background: #f9f9f9;
+            cursor: pointer;
+            margin: 1rem 0;
+            transition: all 0.2s ease;
+        }
+        .dropzone.dragover {
+            border-color: #0070f3;
+            background: #f0f7ff;
+        }
+        .dropzone p {
+            margin: 0;
+            color: #666;
+        }
+        .controls {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin: 1rem 0;
+        }
+        .toggle {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            user-select: none;
+        }
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 48px;
+            height: 24px;
+        }
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 24px;
+        }
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        input:checked + .slider {
+            background-color: #0070f3;
+        }
+        input:checked + .slider:before {
+            transform: translateX(24px);
+        }
+        button {
+            background: #0070f3;
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.25rem;
+            cursor: pointer;
+            margin: 0.5rem 0;
+            font-size: 1rem;
+            transition: background 0.2s ease;
+        }
+        button:hover {
+            background: #0051cc;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        table {
+            border-collapse: collapse;
+            margin: 1rem 0;
+            width: 100%;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 0.5rem;
+            text-align: left;
+        }
+        th {
+            background: #f5f5f5;
+        }
+        #preview {
+            overflow-x: auto;
+            margin-top: 1rem;
+        }
+        .message {
+            padding: 1rem;
+            margin: 1rem 0;
+            border-radius: 0.25rem;
+            animation: fadeOut 3s forwards;
+            opacity: 0;
+        }
+        .error {
+            background: #fff5f5;
+            color: #c53030;
+            border: 1px solid #feb2b2;
+        }
+        .success {
+            background: #f0fff4;
+            color: #2f855a;
+            border: 1px solid #9ae6b4;
+        }
+        @keyframes fadeOut {
+            0% { opacity: 1; }
+            70% { opacity: 1; }
+            100% { opacity: 0; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Table Format Converter</h1>
+        <p>Paste a table from any application or drag & drop a CSV/TSV file</p>
+        <div id="dropzone" class="dropzone">
+            <p>Click or paste here</p>
+        </div>
+        <div id="message"></div>
+        <div class="controls">
+            <label class="toggle">
+                <span>Has Header</span>
+                <label class="switch">
+                    <input type="checkbox" id="headerToggle" checked onchange="toggleHeader()">
+                    <span class="slider"></span>
+                </label>
+            </label>
+            <button id="copyButton" onclick="copyAllFormats()" disabled>Copy Table</button>
+        </div>
+        <div id="preview"></div>
+    </div>
+
+    <script>
+        let rawData = [];
+        let hasHeader = true;
+
+        function showMessage(text, isError = false) {
+            const message = document.getElementById('message');
+            message.className = `message ${isError ? 'error' : 'success'}`;
+            message.textContent = text;
+        }
+
+        function detectAndConvert(input) {
+            if (!input) {
+                showMessage('No table data detected!', true);
+                return false;
+            }
+
+            // Try parsing as HTML table
+            if (input.includes('<table')) {
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(input, 'text/html');
+                const table = doc.querySelector('table');
+                if (table) {
+                    parseHtmlTable(table);
+                    return true;
+                }
+            }
+
+            // Check for Markdown table
+            if (input.includes('|') && input.trim().split('\n').length > 1) {
+                const lines = input.trim().split('\n');
+                if (lines.some(line => line.includes('|'))) {
+                    parseMarkdownTable(input);
+                    return true;
+                }
+            }
+
+            // Try CSV/TSV
+            parseDelimitedText(input);
+            return true;
+        }
+
+        function parseHtmlTable(table) {
+            rawData = [];
+            const rows = table.querySelectorAll('tr');
+            rows.forEach(row => {
+                const rowData = [];
+                row.querySelectorAll('th, td').forEach(cell => {
+                    rowData.push(cell.textContent.trim());
+                });
+                if (rowData.length) rawData.push(rowData);
+            });
+        }
+
+        function parseMarkdownTable(input) {
+            const lines = input.split('\n')
+                .map(line => line.trim())
+                .filter(line => line && !line.match(/^\s*[-:|\s]+$/)); // Remove separator rows
+
+            rawData = lines.map(line => {
+                // Split by pipe but keep empty cells
+                const cells = line.split('|');
+
+                // Remove first and last empty cells from edge pipes
+                if (cells[0].trim() === '') cells.shift();
+                if (cells[cells.length - 1].trim() === '') cells.pop();
+
+                // Preserve empty cells but trim non-empty ones
+                return cells.map(cell => cell.trim());
+            });
+        }
+
+        function detectDelimiter(input) {
+            const firstLine = input.split('\n')[0];
+            const delimiters = {
+                '\t': (firstLine.match(/\t/g) || []).length,
+                ',': (firstLine.match(/,/g) || []).length,
+                ';': (firstLine.match(/;/g) || []).length
+            };
+            
+            // Find the delimiter with the most occurrences
+            const maxDelimiter = Object.entries(delimiters)
+                .reduce((max, [delimiter, count]) => 
+                    count > max[1] ? [delimiter, count] : max, 
+                    ['', 0]
+                );
+            
+            return maxDelimiter[0] || ','; // Default to comma if no delimiter found
+        }
+
+        function parseDelimitedText(input) {
+            const delimiter = detectDelimiter(input);
+            
+            // Handle quoted values and escape characters
+            function parseLine(line) {
+                const values = [];
+                let inQuotes = false;
+                let currentValue = '';
+                
+                for (let i = 0; i < line.length; i++) {
+                    const char = line[i];
+                    
+                    if (char === '"' && line[i + 1] === '"') {
+                        currentValue += '"';
+                        i++; // Skip next quote
+                    } else if (char === '"') {
+                        inQuotes = !inQuotes;
+                    } else if (char === delimiter && !inQuotes) {
+                        values.push(currentValue.trim());
+                        currentValue = '';
+                    } else {
+                        currentValue += char;
+                    }
+                }
+                
+                values.push(currentValue.trim()); // Push the last value
+                return values;
+            }
+
+            rawData = input
+                .split('\n')
+                .filter(line => line.trim())
+                .map(parseLine);
+        }
+
+        function getHeaders() {
+            if (!rawData.length) return [];
+            return hasHeader ? rawData[0] : rawData[0].map((_, i) => `Column ${i + 1}`);
+        }
+
+        function getData() {
+            if (!rawData.length) return [];
+            return hasHeader ? rawData.slice(1) : rawData;
+        }
+
+        function generateHtmlTable() {
+            const headers = getHeaders();
+            const data = getData();
+            
+            return `
+                <table>
+                    <thead>
+                        <tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>
+                    </thead>
+                    <tbody>
+                        ${data.map(row => 
+                            `<tr>${row.map(cell => `<td>${cell}</td>`).join('')}</tr>`
+                        ).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+
+        function generateMarkdownTable() {
+            const headers = getHeaders();
+            const data = getData();
+            
+            const headerRow = `| ${headers.join(' | ')} |`;
+            const separator = `| ${headers.map(() => '---').join(' | ')} |`;
+            const dataRows = data.map(row => {
+                // Pad the row if it's shorter than headers
+                const paddedRow = [...row];
+                while (paddedRow.length < headers.length) {
+                    paddedRow.push('');
+                }
+                return `| ${paddedRow.join(' | ')} |`;
+            });
+            return [headerRow, separator, ...dataRows].join('\n');
+        }
+
+        function copyAllFormats() {
+            if (!rawData.length) {
+                showMessage('No table data to copy!', true);
+                return;
+            }
+
+            const clipboardItem = new ClipboardItem({
+                'text/html': new Blob([generateHtmlTable()], { type: 'text/html' }),
+                'text/plain': new Blob([generateMarkdownTable()], { type: 'text/plain' })
+            });
+            
+            navigator.clipboard.write([clipboardItem]).then(() => {
+                showMessage('Table copied! You can now paste it anywhere.');
+            }).catch(err => {
+                showMessage('Failed to copy: ' + err, true);
+            });
+        }
+
+        function renderPreview() {
+            const preview = document.getElementById('preview');
+            preview.innerHTML = generateHtmlTable();
+            document.getElementById('copyButton').disabled = false;
+        }
+
+        function toggleHeader() {
+            hasHeader = document.getElementById('headerToggle').checked;
+            if (rawData.length > 0) {
+                renderPreview();
+            }
+        }
+
+        // Handle paste events
+        document.addEventListener('paste', (e) => {
+            e.preventDefault();
+            const text = e.clipboardData.getData('text/plain');
+            if (detectAndConvert(text)) {
+                renderPreview();
+            }
+        });
+
+        // Setup dropzone
+        const dropzone = document.getElementById('dropzone');
+
+        dropzone.addEventListener('click', () => {
+            navigator.clipboard.readText().then(text => {
+                if (detectAndConvert(text)) {
+                    renderPreview();
+                }
+            }).catch(() => {
+                showMessage('Please paste using Ctrl+V or Command+V', true);
+            });
+        });
+
+        dropzone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropzone.classList.add('dragover');
+        });
+
+        dropzone.addEventListener('dragleave', () => {
+            dropzone.classList.remove('dragover');
+        });
+
+        dropzone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropzone.classList.remove('dragover');
+            
+            const file = e.dataTransfer.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    if (detectAndConvert(e.target.result)) {
+                        renderPreview();
+                    }
+                };
+                reader.readAsText(file);
+            }
+        });
+    </script>
+</body>
+</html>
