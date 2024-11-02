@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+body{font-family:system-ui,-apple-system,sans-serif;max-width:800px;margin:20px auto;padding:0 20px;background:#f5f5f5}
+.container{background:white;padding:20px;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,.1)}
+#display{width:calc(100% - 22px);padding:10px;margin:10px 0;border:1px solid #ddd;border-radius:4px;font-family:monospace;min-height:70px;background:#f8f9fa;overflow:auto;word-break:break-all;white-space:normal}
+.jwt-part{margin:15px 0;padding:15px;border-radius:4px;background:#f8f9fa}
+.error{color:#dc3545;margin:10px 0;padding:10px;border-radius:4px;background:#f8d7da;border:1px solid #f5c2c7}
+.label{font-weight:600;color:#495057;margin-bottom:5px}
+pre{margin:0;white-space:pre-wrap;word-break:break-all}
+.header-part{color:#0059ff}
+.payload-part{color:#00a351}
+.signature-part{color:#ff3e00}
+.jwt-part.header{border-left:4px solid #0059ff}
+.jwt-part.payload{border-left:4px solid #00a351}
+.jwt-part.signature{border-left:4px solid #ff3e00}
+.jwt-part.expiration{border-left:4px solid #6c757d}
+.disclaimer{background:#fff3cd;border:1px solid #ffeeba;color:#856404;padding:10px;border-radius:4px;margin:0 0 15px 0;font-size:14px}
+.placeholder{color:#6c757d;text-align:center;padding:20px 0}
+kbd{background:#eee;border-radius:3px;border:1px solid #b4b4b4;box-shadow:0 1px 1px rgba(0,0,0,.2);padding:2px 5px;font-size:11px}
+</style>
+</head>
+<body>
+<div class="container">
+    <div class="disclaimer">
+        Security Notice: JWTs often contain sensitive data. This tool processes everything locally in your browser - no data is sent to any server. 
+        However, you should always verify this claim by inspecting the source code before pasting sensitive tokens.
+    </div>
+    <div id="display">
+        <div class="placeholder">Press <kbd>Ctrl</kbd>+<kbd>V</kbd> (<kbd>⌘</kbd>+<kbd>V</kbd> on Mac) to decode your JWT</div>
+    </div>
+    <div id="result"></div>
+</div>
+
+<script>
+const colorizeJwt = (jwt) => {
+    const parts = jwt.split('.');
+    if (parts.length !== 3) return jwt;
+    return `<span class="header-part">${parts[0]}</span>.<span class="payload-part">${parts[1]}</span>.<span class="signature-part">${parts[2]}</span>`;
+};
+
+const decode = (jwt) => {
+    try {
+        const [headerB64, payloadB64, signature] = jwt.split('.');
+        if (!headerB64 || !payloadB64 || !signature) {
+            document.getElementById('result').innerHTML = 
+                '<div class="error">Invalid JWT format. Expected format: header.payload.signature</div>';
+            return;
+        }
+
+        const header = JSON.parse(atob(headerB64));
+        const payload = JSON.parse(atob(payloadB64));
+
+        let output = `
+            <div class="jwt-part header">
+                <div class="label">Header:</div>
+                <pre>${JSON.stringify(header, null, 2)}</pre>
+            </div>
+            <div class="jwt-part payload">
+                <div class="label">Payload:</div>
+                <pre>${JSON.stringify(payload, null, 2)}</pre>
+            </div>
+            <div class="jwt-part signature">
+                <div class="label">Signature:</div>
+                <pre>${signature}</pre>
+            </div>`;
+
+        if (payload.exp) {
+            const expDate = new Date(payload.exp * 1000);
+            const isExpired = expDate < new Date();
+            output += `
+                <div class="jwt-part expiration">
+                    <div class="label">Expiration:</div>
+                    <pre>Date: ${expDate.toLocaleString()}\nStatus: ${isExpired ? 'Expired' : 'Valid'}</pre>
+                </div>`;
+        }
+
+        document.getElementById('result').innerHTML = output;
+    } catch (e) {
+        document.getElementById('result').innerHTML = 
+            '<div class="error">Invalid JWT format. Could not decode base64 data.</div>';
+    }
+};
+
+document.addEventListener('paste', (e) => {
+    const text = e.clipboardData.getData('text/plain').trim();
+    if (!text) {
+        document.getElementById('display').innerHTML = 
+            '<div class="placeholder">Press <kbd>Ctrl</kbd>+<kbd>V</kbd> (<kbd>⌘</kbd>+<kbd>V</kbd> on Mac) to decode your JWT</div>';
+        document.getElementById('result').innerHTML = '';
+        return;
+    }
+    document.getElementById('display').innerHTML = colorizeJwt(text);
+    decode(text);
+});
+</script>
+</body>
+</html>
