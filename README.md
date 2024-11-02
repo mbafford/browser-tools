@@ -12,4 +12,4 @@ Credit to [https://github.com/simonw/tools](https://github.com/simonw/tools) ([h
 
 # External Tools
 
-- [Clipboard Viewer](https://tools.simonwillison.net/clipboard-viewer) - See and extract the multiple entries stored in your clipboard.
+- [Clipboard Viewer - Simon Willison](https://tools.simonwillison.net/clipboard-viewer) - See and extract the multiple entries stored in your clipboard.
