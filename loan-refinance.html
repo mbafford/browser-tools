@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html>
+<!-- Previous styles remain exactly the same -->
+<head><style>
+body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:900px;margin:2rem auto;padding:0 1rem}
+.card{background:#fff;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,.1);padding:1.5rem}
+.form-group{margin-bottom:1rem}
+label{display:block;margin-bottom:.5rem;color:#555;font-size:.9rem}
+input{width:100%;padding:.5rem;border:1px solid #ddd;border-radius:4px;margin-bottom:.5rem}
+textarea{width:100%;padding:.5rem;border:1px solid #ddd;border-radius:4px;height:100px;margin-bottom:1rem}
+button{background:#2563eb;color:#fff;border:none;padding:.75rem 1.5rem;border-radius:4px;width:100%;cursor:pointer;font-size:1rem}
+button:hover{background:#1d4ed8}
+.results{margin-top:1.5rem;padding-top:1.5rem;border-top:1px solid #eee}
+table{width:100%;border-collapse:collapse;margin-top:1rem}
+th{background:#f8fafc;text-align:left;padding:.75rem}
+td{padding:.75rem;border-top:1px solid #eee}
+.positive{color:#16a34a}
+.negative{color:#dc2626}
+.col{width:25%}
+.alternatives{display:flex;gap:.5rem;margin-top:.25rem;flex-wrap:wrap}
+.alt{font-size:.8rem;color:#2563eb;cursor:pointer;padding:.25rem .5rem;background:#e0e7ff;border-radius:4px}
+.alt:hover{background:#c7d2fe}
+.extraction{color:#666;font-size:.9rem;margin:1rem 0;padding:1rem;background:#f8fafc;border-radius:4px}
+.debug{font-family:monospace;font-size:.8rem;white-space:pre-wrap}
+</style></head>
+<body>
+<div class="card">
+  <div class="form-group">
+    <label>Paste loan details:</label>
+    <textarea id="rawText" placeholder="Paste text containing loan details..."></textarea>
+    <button onclick="extractValues()">Extract Values</button>
+  </div>
+  <div id="extractionSummary" class="extraction" style="display:none"></div>
+  <div class="form-group">
+    <label>Loan Amount ($)</label>
+    <input type="number" id="loanAmount" value="200000">
+    <div id="altAmounts" class="alternatives"></div>
+  </div>
+  <div class="form-group">
+    <label>Current Interest Rate (%)</label>
+    <input type="number" id="currentRate" value="5.5" step="0.1">
+    <div id="altRates1" class="alternatives"></div>
+  </div>
+  <div class="form-group">
+    <label>Current Remaining Term (months)</label>
+    <input type="number" id="currentTerm" value="300">
+    <div id="altTerms1" class="alternatives"></div>
+  </div>
+  <div class="form-group">
+    <label>New Interest Rate (%)</label>
+    <input type="number" id="newRate" value="4.5" step="0.1">
+    <div id="altRates2" class="alternatives"></div>
+  </div>
+  <div class="form-group">
+    <label>New Term (months)</label>
+    <input type="number" id="newTerm" value="300">
+    <div id="altTerms2" class="alternatives"></div>
+  </div>
+  <button onclick="calculateComparison()">Compare Loans</button>
+  <div id="results" class="results" style="display:none">
+    <table>
+      <tr>
+        <th class="col">Metric</th>
+        <th class="col">Current Loan</th>
+        <th class="col">New Loan</th>
+        <th class="col">Difference</th>
+      </tr>
+      <tr>
+        <td>Interest Rate</td>
+        <td id="currentRateDisplay"></td>
+        <td id="newRateDisplay"></td>
+        <td id="rateDiff"></td>
+      </tr>
+      <tr>
+        <td>Term</td>
+        <td id="currentTermDisplay"></td>
+        <td id="newTermDisplay"></td>
+        <td id="termDiff"></td>
+      </tr>
+      <tr>
+        <td>Monthly Payment</td>
+        <td id="currentPayment"></td>
+        <td id="newPayment"></td>
+        <td id="monthlyDiff"></td>
+      </tr>
+      <tr>
+        <td>Total Interest</td>
+        <td id="currentInterest"></td>
+        <td id="newInterest"></td>
+        <td id="interestDiff"></td>
+      </tr>
+      <tr>
+        <td>Total Cost of Loan</td>
+        <td id="currentTotal"></td>
+        <td id="newTotal"></td>
+        <td id="totalDiff"></td>
+      </tr>
+    </table>
+  </div>
+</div>
+<script>
+function parseMoneyValue(str) {
+  return parseFloat(str.replace(/[$,]/g, ''));
+}
+
+function formatMoney(val) {
+  return new Intl.NumberFormat('en-US', {style: 'currency', currency: 'USD'}).format(val);
+}
+
+function formatRate(val) {
+  return val.toFixed(2) + '%';
+}
+
+function formatTerm(months) {
+  if (months % 12 === 0) {
+    const years = months / 12;
+    return years === 1 ? "1 year" : `${years} years`;
+  }
+  return months === 1 ? "1 month" : `${months} months`;
+}
+
+function extractValues() {
+  const text = document.getElementById('rawText').value;
+  
+  const patterns = {
+    // Money: Must be >= $1000 and not part of a date
+    money: /(?<![\d-])\$?((?:\d{1,3}(?:,\d{3})+|\d{4,})(?:\.\d{2})?)\b(?![-\/])/g,
+    
+    // Terms: Standalone numbers 1-360
+    terms: /(?<![\d,.$-])(?<!\d[/-])\b([1-9](?:\d)?(?:\d)?)\b(?![-/$%,\d]|\.\d)/g,
+    
+    // Rates: Must have % symbol
+    rates: /\b(\d{1,2}(?:\.\d{1,3})?%)/g,
+    
+    // Dates: Standard formats only
+    dates: /\b(\d{4}-\d{2}-\d{2}|\d{2}\/\d{2}\/\d{4})\b/g
+  };
+
+  const values = {
+    money: [...text.matchAll(patterns.money)]
+      .map(m => m[1])
+      .map(v => parseMoneyValue(v))
+      .filter(v => v >= 1000),
+    terms: [...text.matchAll(patterns.terms)]
+      .map(m => parseInt(m[1]))
+      .filter(v => v <= 360),
+    rates: [...text.matchAll(patterns.rates)]
+      .map(m => parseFloat(m[1])),
+    dates: [...text.matchAll(patterns.dates)]
+      .map(m => new Date(m[1]))
+  };
+
+  // Sort values by likelihood
+  const money = [...new Set(values.money)].sort((a, b) => b - a);
+  const terms = [...new Set(values.terms)]
+  const rates = [...new Set(values.rates)].sort((a, b) => a - b);
+
+  // Calculate term from dates if available
+  if (values.dates.length === 2) {
+    const monthDiff = Math.round((values.dates[1] - values.dates[0]) / (1000 * 60 * 60 * 24 * 30.44));
+    if (monthDiff > 0 && monthDiff <= 360) terms.push(monthDiff);
+  }
+
+  // Convert years to months if needed
+  const convertedTerms = [...new Set(terms.map(t => 
+    t < 30 && t > 0 && t % 12 !== 0 ? t * 12 : t
+  ))];
+
+  // Sort terms for current (descending) and new (ascending)
+  const currentTerms = [...convertedTerms].sort((a, b) => b - a);
+  const newTerms = [...convertedTerms].sort((a, b) => a - b);
+
+  // Set primary values
+  if (money.length > 0) document.getElementById('loanAmount').value = money[0];
+  if (rates.length > 0) {
+    document.getElementById('currentRate').value = rates[rates.length - 1];
+    if (rates.length > 1) document.getElementById('newRate').value = rates[0];
+  }
+  if (currentTerms.length > 0) {
+    document.getElementById('currentTerm').value = currentTerms[0];  // Longest term
+    document.getElementById('newTerm').value = newTerms[0];         // Shortest term
+  }
+
+  // Create alternative value buttons
+  function createAlts(values, targetId, formatter, setter) {
+    const container = document.getElementById(targetId);
+    container.innerHTML = '';
+    values.forEach(v => {
+      const btn = document.createElement('span');
+      btn.className = 'alt';
+      btn.textContent = formatter(v);
+      btn.onclick = () => setter(v);
+      container.appendChild(btn);
+    });
+  }
+
+  createAlts(money, 'altAmounts', formatMoney, 
+    v => document.getElementById('loanAmount').value = v);
+  createAlts(rates, 'altRates1', formatRate, 
+    v => document.getElementById('currentRate').value = v);
+  createAlts(rates, 'altRates2', formatRate, 
+    v => document.getElementById('newRate').value = v);
+  createAlts(currentTerms, 'altTerms1', formatTerm, 
+    v => document.getElementById('currentTerm').value = v);
+  createAlts(newTerms, 'altTerms2', formatTerm, 
+    v => document.getElementById('newTerm').value = v);
+
+  // Show extraction summary
+  const summary = document.getElementById('extractionSummary');
+  summary.innerHTML = `
+    Found: ${money.length} amounts, ${rates.length} rates, ${terms.length} terms${values.dates.length ? `, ${values.dates.length} dates` : ''}
+  `;
+  summary.style.display = 'block';
+}
+
+function calculatePayment(principal, rate, months) {
+  const monthlyRate = rate / 1200;
+  return principal * monthlyRate / (1 - Math.pow(1 + monthlyRate, -months));
+}
+
+function formatDifference(value, formatter) {
+  const formatted = formatter(Math.abs(value));
+  const className = value < 0 ? 'positive' : value > 0 ? 'negative' : '';
+  const prefix = value < 0 ? '-' : value > 0 ? '+' : '';
+  return `<span class="${className}">${prefix}${formatted}</span>`;
+}
+
+function calculateComparison() {
+  const amount = parseFloat(document.getElementById('loanAmount').value);
+  const currentRate = parseFloat(document.getElementById('currentRate').value);
+  const currentTerm = parseFloat(document.getElementById('currentTerm').value);
+  const newRate = parseFloat(document.getElementById('newRate').value);
+  const newTerm = parseFloat(document.getElementById('newTerm').value);
+
+  const currentPayment = calculatePayment(amount, currentRate, currentTerm);
+  const newPayment = calculatePayment(amount, newRate, newTerm);
+  
+  const currentTotalInterest = (currentPayment * currentTerm) - amount;
+  const newTotalInterest = (newPayment * newTerm) - amount;
+  
+  const currentTotal = currentPayment * currentTerm;
+  const newTotal = newPayment * newTerm;
+
+  // Display values
+  document.getElementById('currentRateDisplay').textContent = formatRate(currentRate);
+  document.getElementById('newRateDisplay').textContent = formatRate(newRate);
+  document.getElementById('currentTermDisplay').textContent = formatTerm(currentTerm);
+  document.getElementById('newTermDisplay').textContent = formatTerm(newTerm);
+  
+  document.getElementById('currentPayment').textContent = formatMoney(currentPayment);
+  document.getElementById('newPayment').textContent = formatMoney(newPayment);
+  document.getElementById('currentInterest').textContent = formatMoney(currentTotalInterest);
+  document.getElementById('newInterest').textContent = formatMoney(newTotalInterest);
+  document.getElementById('currentTotal').textContent = formatMoney(currentTotal);
+  document.getElementById('newTotal').textContent = formatMoney(newTotal);
+  
+  // Display differences
+  document.getElementById('rateDiff').innerHTML = formatDifference(newRate - currentRate, formatRate);
+  document.getElementById('termDiff').innerHTML = formatDifference(newTerm - currentTerm, formatTerm);
+  document.getElementById('monthlyDiff').innerHTML = formatDifference(newPayment - currentPayment, formatMoney);
+  document.getElementById('interestDiff').innerHTML = formatDifference(newTotalInterest - currentTotalInterest, formatMoney);
+  document.getElementById('totalDiff').innerHTML = formatDifference(newTotal - currentTotal, formatMoney);
+  
+  document.getElementById('results').style.display = 'block';
+}
+</script>
+</body>
+</html>
