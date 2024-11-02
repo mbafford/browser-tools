@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tracking Number Detector</title>
+    <style>
+        body{font-family:system-ui,-apple-system,sans-serif;max-width:600px;margin:2rem auto;padding:0 1rem;line-height:1.5;background:#f5f5f5;cursor:pointer}
+        .container{background:white;padding:2rem;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,.1)}
+        .input-group{display:flex;gap:1rem;margin:1rem 0;align-items:center}
+        input{flex:1;max-width:300px;padding:.75rem;border:2px solid #ddd;border-radius:4px;font-size:1rem}
+        input:focus{outline:none;border-color:#4a90e2}
+        button{background:#4a90e2;color:white;border:none;padding:.75rem 1.5rem;border-radius:4px;cursor:pointer;font-size:1rem;white-space:nowrap}
+        button:hover{background:#357abd}
+        .result{margin-top:1rem;padding:1rem;border-radius:4px;display:none}
+        .result.found{display:block;background:#e3f2fd;border:1px solid #bbdefb}
+        .result.error{display:block;background:#ffebee;border:1px solid #ffcdd2}
+        a{color:#4a90e2;text-decoration:none}
+        a:hover{text-decoration:underline}
+        .hint{color:#666;font-size:.9rem;margin-top:.5rem}
+    </style>
+</head>
+<body onclick="document.getElementById('trackingNumber').focus()">
+    <div class="container">
+        <h2>Tracking Number Detector</h2>
+        <div class="input-group">
+            <input type="text" id="trackingNumber" placeholder="Enter tracking number" autocomplete="off">
+            <button onclick="detectCarrier()">Detect Carrier</button>
+        </div>
+        <div class="hint">Click anywhere or press Ctrl+V to paste tracking number</div>
+        <div id="result" class="result"></div>
+    </div>
+
+    <script>
+        const carriers = {
+            usps: {
+                patterns: [
+                    /^94[0-9]{20}$/,
+                    /^92[0-9]{20}$/,
+                    /^[0-9]{20}$/,
+                    /^(91|92|93|94|95|96|97)[0-9]{20}$/,
+                    /^(C|E|L|V)[A-Z]{1}[0-9]{9}US$/,
+                    /^[0-9]{2}[0-9]{9}$/
+                ],
+                name: 'USPS',
+                url: 'https://tools.usps.com/go/TrackConfirmAction?tLabels='
+            },
+            ups: {
+                patterns: [
+                    /^1Z[A-Z0-9]{16}$/,
+                    /^T\d{10}$/,
+                    /^(H|K|J)[0-9]{10}$/
+                ],
+                name: 'UPS',
+                url: 'https://www.ups.com/track?track=yes&tracknum='
+            },
+            fedex: {
+                patterns: [
+                    /^(\d{12}|\d{14}|\d{15})$/,
+                    /^(\d{14}|\d{16}|\d{20})$/,
+                    /^(\d{22})$/
+                ],
+                name: 'FedEx',
+                url: 'https://www.fedex.com/fedextrack/?trknbr='
+            },
+            dhl: {
+                patterns: [
+                    /^[0-9]{10}$/,
+                    /^[0-9]{12}$/,
+                    /^[0-9]{14}$/
+                ],
+                name: 'DHL',
+                url: 'https://www.dhl.com/en/express/tracking.html?awb='
+            },
+            ontrac: {
+                patterns: [
+                    /^C[0-9]{14}$/
+                ],
+                name: 'OnTrac',
+                url: 'https://www.ontrac.com/tracking/trackingdetail.asp?tracking='
+            },
+            lasership: {
+                patterns: [
+                    /^L[A-Z0-9]{9}$/,
+                    /^1LS[A-Z0-9]{12}$/
+                ],
+                name: 'LaserShip',
+                url: 'https://www.lasership.com/track/'
+            }
+        };
+
+        function detectCarrier() {
+            const tracking = document.getElementById('trackingNumber').value.trim().toUpperCase();
+            const resultDiv = document.getElementById('result');
+            
+            if (!tracking) {
+                resultDiv.className = 'result error';
+                resultDiv.innerHTML = 'Please enter a tracking number';
+                return;
+            }
+
+            for (const [carrier, info] of Object.entries(carriers)) {
+                if (info.patterns.some(pattern => pattern.test(tracking))) {
+                    resultDiv.className = 'result found';
+                    resultDiv.innerHTML = `Detected carrier: <strong>${info.name}</strong><br>
+                        <a href="${info.url}${tracking}" target="_blank" rel="noopener noreferrer">Track Package →</a>`;
+                    return;
+                }
+            }
+
+            resultDiv.className = 'result error';
+            resultDiv.innerHTML = 'Unable to detect carrier. Please verify the tracking number.';
+        }
+
+        document.getElementById('trackingNumber').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') detectCarrier();
+        });
+
+        document.addEventListener('paste', function(e) {
+            e.preventDefault();
+            const input = document.getElementById('trackingNumber');
+            const text = e.clipboardData.getData('text');
+            input.value = text;
+            detectCarrier();
+        });
+    </script>
+</body>
+</html>
