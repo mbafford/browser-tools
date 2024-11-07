@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+body{font-family:system-ui,-apple-system,sans-serif;margin:0;padding:20px;background:#f0f2f5;min-height:100vh;display:flex;flex-direction:column;align-items:center}
+.header{max-width:800px;margin:0 auto 24px;text-align:center}
+.title{font-size:24px;font-weight:600;margin-bottom:12px;color:#1a1a1a}
+.description{color:#666;line-height:1.5;margin-bottom:16px}
+.security{background:#fff3cd;border:1px solid #ffeeba;color:#856404;padding:12px;border-radius:6px;margin-top:12px;font-size:14px}
+.wrapper{display:flex;flex-direction:column;gap:24px;max-width:1000px;width:100%;margin:0 auto}
+.box{background:white;padding:24px;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,.1);min-height:200px;display:flex;flex-direction:column}
+.output{display:flex;flex-direction:column;align-items:center;gap:16px;flex:1;overflow:auto}
+img{max-width:100%;max-height:70vh;border-radius:4px}
+.instructions{color:#666;line-height:1.5;margin-bottom:16px}
+.error{color:#e53e3e;margin:8px 0}
+.input{flex:1;width:100%;resize:none;border:none;outline:none;font-family:monospace;padding:8px;min-height:100px}
+canvas{max-width:100%;height:auto}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+</head>
+<body>
+<div class="header">
+    <div class="title">Base64 Image & PDF Decoder</div>
+    <div class="description">
+        Decode and preview base64-encoded images and PDFs directly in your browser.
+        Supports raw base64 data and data URLs (data:image/... or data:application/pdf;base64,...).
+    </div>
+    <div class="security">
+        ⚠️ This page processes all data locally in your browser. However, always review the source code
+        before pasting sensitive data, as malicious versions of this page could expose your data.
+    </div>
+</div>
+<div class="wrapper">
+    <div class="box">
+        <div class="instructions">Paste base64 data here or anywhere on the page</div>
+        <textarea class="input" placeholder="Paste base64 encoded data or data URL..."></textarea>
+    </div>
+    <div class="box">
+        <div class="instructions">Preview</div>
+        <div class="output"></div>
+    </div>
+</div>
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+const input = document.querySelector('.input');
+const output = document.querySelector('.output');
+
+async function handlePDFData(data) {
+    try {
+        const pdfData = atob(data.replace(/[^A-Za-z0-9+/=]/g, ''));
+        const loadingTask = pdfjsLib.getDocument({data: pdfData});
+        const pdf = await loadingTask.promise;
+        
+        output.innerHTML = '';
+        const pageNum = 1;
+        const page = await pdf.getPage(pageNum);
+        const scale = 1.5;
+        const viewport = page.getViewport({scale});
+        
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+        
+        await page.render({
+            canvasContext: context,
+            viewport: viewport
+        }).promise;
+        
+        output.appendChild(canvas);
+    } catch {
+        return false;
+    }
+    return true;
+}
+
+async function processInput(text) {
+    output.innerHTML = '';
+    if (!text.trim()) return;
+    
+    try {
+        const img = new Image();
+        img.onerror = async () => {
+            if (text.startsWith('data:application/pdf;base64,')) {
+                const base64 = text.split(',')[1];
+                if (!await handlePDFData(base64)) {
+                    output.innerHTML = '<div class="error">Invalid PDF data</div>';
+                }
+            } else if (!await handlePDFData(text)) {
+                output.innerHTML = '<div class="error">Invalid data</div>';
+            }
+        };
+        
+        if (text.startsWith('data:')) {
+            if (text.startsWith('data:application/pdf;base64,')) {
+                const base64 = text.split(',')[1];
+                await handlePDFData(base64);
+            } else {
+                img.src = text;
+                output.appendChild(img);
+            }
+        } else {
+            const formats = ['jpeg', 'png', 'gif', 'webp'];
+            let loaded = false;
+            
+            formats.forEach(format => {
+                if (!loaded) {
+                    try {
+                        img.src = `data:image/${format};base64,${text.replace(/[^A-Za-z0-9+/=]/g, '')}`;
+                        loaded = true;
+                    } catch {}
+                }
+            });
+            
+            if (loaded) {
+                output.appendChild(img);
+            } else if (!await handlePDFData(text)) {
+                throw new Error('Could not decode data');
+            }
+        }
+    } catch (err) {
+        output.innerHTML = '<div class="error">Invalid data</div>';
+    }
+}
+
+input.addEventListener('input', e => processInput(e.target.value));
+document.addEventListener('paste', e => {
+    const text = e.clipboardData.getData('text');
+    input.value = text;
+    processInput(text);
+});
+</script>
+</body>
+</html>
