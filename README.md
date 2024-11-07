@@ -10,6 +10,7 @@ Credit to [https://github.com/simonw/tools](https://github.com/simonw/tools) ([h
 - [Table Formatter](table-formatter) - Takes copy-and-paste of CSV, TSV, Markdown, table, or Google Sheets, and extracts the table and provides an easy copy to a multi-mime-type clipboard entry that can be pasted to Google Sheets, an email program as formatted email, or a text box as Markdown.
 - [Loan Refinance Calculator](loan-refinance) - Refinance calculator - either enter terms manually, or paste in the details and it'll try to figure out the terms. Very US presumptive.
 - [JWT Decoder](jwt-decode) - JWT decoder. Paste into browser. Similar to JWT.io, but in my control.
+- [Base64 Image Decoder](base64-image) - Paste in a base64 image file and decode and display it in your browser. Also supports PDFs using pdf.js.
 
 # External Tools
 
