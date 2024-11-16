@@ -11,6 +11,7 @@ Credit to [https://github.com/simonw/tools](https://github.com/simonw/tools) ([h
 - [Loan Refinance Calculator](loan-refinance) - Refinance calculator - either enter terms manually, or paste in the details and it'll try to figure out the terms. Very US presumptive.
 - [JWT Decoder](jwt-decode) - JWT decoder. Paste into browser. Similar to JWT.io, but in my control.
 - [Base64 Image Decoder](base64-image) - Paste in a base64 image file and decode and display it in your browser. Also supports PDFs using pdf.js.
+- [Date Difference Calculator](date-calculator) - Calculate number of days / weeks / years between two dates
 
 # External Tools
 

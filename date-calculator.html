@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Date Difference Calculator</title>
+    <style>
+        body{font-family:system-ui,-apple-system,sans-serif;max-width:600px;margin:2rem auto;padding:0 1rem;color:#333;line-height:1.6}
+        .container{background:#fff;padding:1.5rem;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,.1)}
+        h1{color:#2563eb;margin:0 0 1.5rem;font-size:1.5rem}
+        .input-group{margin-bottom:1rem;display:flex;gap:1rem;align-items:center}
+        input[type="date"]{padding:.5rem;border:1px solid #ddd;border-radius:4px;font-size:1rem}
+        .results{margin-top:1.5rem;padding:1rem;background:#f8fafc;border-radius:4px}
+        .result-item{margin:.5rem 0;font-size:.95rem}
+        .info{margin-top:1rem;font-size:.9rem;color:#666;border-top:1px solid #eee;padding-top:1rem}
+        label{font-weight:500;min-width:100px}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Date Difference Calculator</h1>
+        <div class="input-group">
+            <label>Start Date:</label>
+            <input type="date" id="startDate">
+        </div>
+        <div class="input-group">
+            <label>End Date:</label>
+            <input type="date" id="endDate">
+        </div>
+        <div class="results" id="results"></div>
+        <div class="info">
+            Note: Calculations include both the start and end dates (inclusive counting)
+        </div>
+    </div>
+    <script>
+        const startDateInput = document.getElementById('startDate');
+        const endDateInput = document.getElementById('endDate');
+        const resultsDiv = document.getElementById('results');
+
+        function formatDate(date) {
+            return date.toLocaleDateString('en-US', {
+                year: 'numeric', month: 'long', day: 'numeric'
+            });
+        }
+
+        function calculateDifference() {
+            const start = new Date(startDateInput.value);
+            const end = new Date(endDateInput.value);
+            
+            if (isNaN(start.getTime()) || isNaN(end.getTime())) return;
+            
+            const diffTime = Math.abs(end - start);
+            const days = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1;
+            const weeks = Math.floor(days / 7);
+            const months = Math.floor(days / 30.436875);
+            const years = Math.floor(days / 365.25);
+            
+            resultsDiv.innerHTML = `
+                <div class="result-item">From ${formatDate(start)} to ${formatDate(end)}:</div>
+                <div class="result-item">• ${days.toLocaleString()} days</div>
+                <div class="result-item">• ${weeks.toLocaleString()} weeks</div>
+                <div class="result-item">• ${months.toLocaleString()} months</div>
+                <div class="result-item">• ${years.toLocaleString()} years</div>
+            `;
+        }
+
+        startDateInput.valueAsDate = new Date();
+        endDateInput.valueAsDate = new Date();
+        
+        startDateInput.addEventListener('change', calculateDifference);
+        endDateInput.addEventListener('change', calculateDifference);
+        
+        calculateDifference();
+    </script>
+</body>
+</html>
