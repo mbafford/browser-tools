@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>JSON Structure Analyzer</title>
+<style>
+body{font-family:system-ui,-apple-system,sans-serif;max-width:1200px;margin:20px auto;padding:0 20px;line-height:1.6}
+textarea{width:100%;height:200px;margin:10px 0;font-family:monospace;padding:8px;box-sizing:border-box}
+table{width:100%;border-collapse:collapse;margin:20px 0}
+th,td{text-align:left;padding:8px;border-bottom:1px solid #ddd}
+.count{width:80px;text-align:right}
+.path{font-family:monospace;white-space:nowrap}
+td:last-child{width:200px}
+.types,.values{margin:0;padding:0 0 0 20px;font-size:.9em;color:#666}
+.types li,.values li{text-overflow:ellipsis;overflow:hidden;white-space:nowrap}
+button{background:#0066cc;color:white;border:none;padding:10px 20px;border-radius:4px;cursor:pointer}
+button:hover{background:#0052a3}
+.error,.warning{margin:10px 0}
+.error{color:#cc0000}
+.warning{color:#cc6600}
+.credit,.disclaimer{font-size:.9em;color:#666;margin-top:20px}
+.credit a,.disclaimer a{color:#0066cc;text-decoration:none}
+.credit a:hover,.disclaimer a:hover{text-decoration:underline}
+</style>
+</head>
+<body>
+<h2>JSON Structure Analyzer</h2>
+<p class="disclaimer">Data is processed entirely in your browser. You can <a href="javascript:void(0)" onclick="document.body.innerHTML=document.documentElement.outerHTML">view the source</a> to verify.</p>
+<textarea id="input" placeholder="Paste JSON here..."></textarea>
+<div>
+<button onclick="analyze()">Analyze Structure</button>
+<label><input type="checkbox" id="showValues" onchange="analyze()"> Show sample values</label>
+</div>
+<div id="error" class="error"></div>
+<div id="warning" class="warning"></div>
+<div id="output"></div>
+<div class="credit">Based on <a href="https://gist.github.com/mbafford/5a0ff6675b92ea1a6d80">my Python version of this tool</a></div>
+
+<script>
+class Summarizer {
+    constructor() {
+        this.keyCounts = new Map();
+        this.keyTypes = new Map();
+        this.keyValues = new Map();
+    }
+
+    summarize(data, parentKey = '') {
+        if (Array.isArray(data)) {
+            data.forEach(item => this.summarize(item, `${parentKey}[]`));
+        } else if (data && typeof data === 'object') {
+            Object.entries(data).forEach(([key, value]) => 
+                this.summarize(value, `${parentKey}.{${key}}`));
+        } else {
+            const type = data === null ? 'null' : typeof data;
+            if (!this.keyCounts.has(parentKey)) {
+                this.keyCounts.set(parentKey, 0);
+                this.keyTypes.set(parentKey, new Map());
+                this.keyValues.set(parentKey, new Map());
+            }
+            this.keyCounts.set(parentKey, this.keyCounts.get(parentKey) + 1);
+            this.keyTypes.set(parentKey, 
+                this.keyTypes.get(parentKey).set(type, 
+                    (this.keyTypes.get(parentKey).get(type) || 0) + 1));
+            this.keyValues.set(parentKey,
+                this.keyValues.get(parentKey).set(data, 
+                    (this.keyValues.get(parentKey).get(data) || 0) + 1));
+        }
+    }
+
+    formatResults() {
+        const rows = [];
+        const paths = Array.from(this.keyCounts.keys()).sort();
+        paths.forEach(path => {
+            const count = this.keyCounts.get(path);
+            const types = Array.from(this.keyTypes.get(path).entries())
+                .map(([t, c]) => `<li>${t} (${c})</li>`).join('');
+            const values = Array.from(this.keyValues.get(path).entries())
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 5)
+                .map(([v, c]) => {
+                    const display = v === null ? 'null' : String(v);
+                    return `<li>${display} (${c})</li>`;
+                }).join('');
+            rows.push(`<tr>
+                <td class="count">${count}</td>
+                <td class="path">${path}</td>
+                <td><ul class="types">${types}</ul></td>
+                ${document.getElementById('showValues').checked ? 
+                    `<td><ul class="values">${values}</ul></td>` : ''}
+            </tr>`);
+        });
+        return rows;
+    }
+}
+
+function analyze() {
+    const error = document.getElementById('error');
+    const warning = document.getElementById('warning');
+    const output = document.getElementById('output');
+    error.textContent = '';
+    warning.textContent = '';
+    output.innerHTML = '';
+    
+    try {
+        let input = document.getElementById('input').value.trim();
+        let data;
+        
+        if (input.includes('\n') || /}\s*{/.test(input)) {
+            try {
+                data = input.split('\n')
+                    .filter(line => line.trim())
+                    .map(line => JSON.parse(line));
+                warning.textContent = `Detected multiple objects in JSONL format. Combined ${data.length} objects into array for analysis.`;
+            } catch {
+                try {
+                    data = input.split(/}\s*{/)
+                        .map((obj, i, arr) => {
+                            if (i === 0) return obj + '}';
+                            if (i === arr.length - 1) return '{' + obj;
+                            return '{' + obj + '}';
+                        })
+                        .map(obj => JSON.parse(obj));
+                    warning.textContent = `Detected multiple concatenated JSON objects. Combined ${data.length} objects into array for analysis.`;
+                } catch {
+                    data = JSON.parse(input);
+                }
+            }
+        } else {
+            data = JSON.parse(input);
+        }
+
+        if (!Array.isArray(data)) data = [data];
+        
+        const sum = new Summarizer();
+        sum.summarize(data);
+        output.innerHTML = `
+            <table>
+                <thead>
+                    <tr>
+                        <th>Count</th>
+                        <th>Path</th>
+                        <th>Types</th>
+                        ${document.getElementById('showValues').checked ? 
+                            '<th>Sample Values</th>' : ''}
+                    </tr>
+                </thead>
+                <tbody>${sum.formatResults().join('')}</tbody>
+            </table>`;
+    } catch (e) {
+        if (document.getElementById('input').value.trim()) {
+            error.textContent = 'Invalid JSON: ' + e.message;
+        }
+    }
+}
+
+document.addEventListener('paste', (e) => {
+    const input = document.getElementById('input');
+    if (e.target !== input) {
+        e.preventDefault();
+        const text = e.clipboardData.getData('text');
+        input.value = text;
+    }
+    setTimeout(analyze, 0);
+});
+
+document.getElementById('input').addEventListener('input', () => {
+    setTimeout(analyze, 0);
+});
+</script>
+</body>
+</html>
