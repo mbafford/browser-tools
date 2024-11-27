@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+body{font-family:system-ui,-apple-system,sans-serif;max-width:800px;margin:2rem auto;padding:0 1rem;line-height:1.5}
+textarea{width:100%;height:150px;margin:1rem 0;padding:.5rem;border:1px solid #ccc;border-radius:4px;font-family:monospace}
+.highlight{background:#ffd7d7;border-bottom:2px solid #ff5757;padding:0 2px}
+.results{background:#f5f5f5;padding:1rem;border-radius:4px;margin-top:1rem}
+.text-result{word-wrap:break-word;white-space:pre-wrap}
+.char-info{display:inline-flex;align-items:center;background:#fff;padding:.5rem;margin:.25rem;border-radius:4px;border:1px solid #ddd}
+.char-list{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:1rem}
+#clear{background:#f44336;color:white;border:none;padding:.5rem 1rem;border-radius:4px;cursor:pointer;float:right}
+.title{color:#333;border-bottom:2px solid #333;padding-bottom:.5rem}
+hr{margin:1rem 0;border:none;border-top:1px solid #ddd}
+</style>
+</head>
+<body>
+<h1 class="title">ASCII Character Checker</h1>
+<button id="clear">Clear</button>
+<textarea id="input" placeholder="Paste your text here..."></textarea>
+<div id="results" class="results"></div>
+
+<script>
+const input = document.getElementById('input');
+const results = document.getElementById('results');
+const clear = document.getElementById('clear');
+
+function analyzeText() {
+    const text = input.value;
+    let foundNonAscii = false;
+    let highlighted = text;
+    const nonAsciiChars = new Map();
+
+    for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        const code = text.charCodeAt(i);
+        if (code > 127) {
+            foundNonAscii = true;
+            highlighted = highlighted.replace(new RegExp(char, 'g'), `<span class="highlight">${char}</span>`);
+            nonAsciiChars.set(char, code);
+        }
+    }
+
+    let output = foundNonAscii ? 
+        `<div class="text-result">${highlighted}</div><hr>` : 
+        '<div>All characters are ASCII!</div>';
+    
+    if (foundNonAscii) {
+        output += '<div class="char-list">';
+        nonAsciiChars.forEach((code, char) => {
+            output += `<div class="char-info">
+                Character: ${char} | Unicode: U+${code.toString(16).toUpperCase().padStart(4, '0')}
+            </div>`;
+        });
+        output += '</div>';
+    }
+    
+    results.innerHTML = text ? output : '';
+}
+
+input.addEventListener('input', analyzeText);
+clear.addEventListener('click', () => {
+    input.value = '';
+    results.innerHTML = '';
+});
+</script>
+</body>
+</html>
