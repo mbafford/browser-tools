@@ -13,6 +13,7 @@ Credit to [https://github.com/simonw/tools](https://github.com/simonw/tools) ([h
 - [Base64 Image Decoder](base64-image) - Paste in a base64 image file and decode and display it in your browser. Also supports PDFs using pdf.js.
 - [Date Difference Calculator](date-calculator) - Calculate number of days / weeks / years between two dates
 - [Summarize JSON](summarize-json) - Summarize a complicated JSON object/array, showing the structure, data types, and sample values
+- [JSON Comparison](json-analyzer-comparison) - Similar to Summarize JSON, but compares two sets of JSON to identify differences
 - [ASCII Checker](ascii-checker) - Identify non-ASCII characters in pasted input
 
 # External Tools
