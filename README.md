@@ -15,6 +15,7 @@ Credit to [https://github.com/simonw/tools](https://github.com/simonw/tools) ([h
 - [Summarize JSON](summarize-json) - Summarize a complicated JSON object/array, showing the structure, data types, and sample values
 - [JSON Comparison](json-analyzer-comparison) - Similar to Summarize JSON, but compares two sets of JSON to identify differences
 - [ASCII Checker](ascii-checker) - Identify non-ASCII characters in pasted input
+- [Epoch Time / Timestamps](epoch) - Convert epoch time to ISO8601/RFC3339 and human-readable format and vice versa
 
 # External Tools
 
