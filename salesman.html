@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Trip Optimizer</title>
+<style>
+body{font-family:sans-serif;margin:20px;background:#f5f5f5}.grid{display:grid;grid-template-columns:300px 1fr;gap:20px}#map{height:600px;border-radius:8px;box-shadow:0 2px 4px #0002}li{display:flex;align-items:center;gap:10px;background:#fff;padding:10px;margin:5px 0;border-radius:4px;box-shadow:0 1px 3px #0001;cursor:move}li.dragging{opacity:0.5;background:#f8f8f8}li[data-pinned="true"]{border-left:4px solid #ff4444}input,button{padding:8px;border:1px solid #ddd;border-radius:4px;width:100%;box-sizing:border-box}button{background:#4CAF50;color:#fff;border:none;cursor:pointer}button.delete,button.pin{padding:4px 8px;width:auto;background:none}button.delete{color:#f44}button.pin{color:#999;font-size:16px}.pin[data-pinned="true"]{color:#ff4444}.travel-info{font-size:12px;color:#666;margin-left:8px}#auth{background:#fff;padding:15px;border-radius:4px;margin-bottom:20px}#app{display:none}ul{list-style:none;padding:0}
+</style>
+</head>
+<body>
+<div id="auth">
+  <input type="password" id="key" placeholder="API Key">
+  <input type="text" id="mid" placeholder="Map ID">
+  <button onclick="init(1)">Save</button>
+  <button onclick="init(0)" style="background:#f44">Clear</button>
+</div>
+<div id="app" class="grid">
+  <div>
+    <input id="loc" placeholder="Enter location">
+    <ul id="list" ondragover="event.preventDefault()" ondrop="handleDrop(event)"></ul>
+    <button onclick="optimize()">Optimize Route</button>
+  </div>
+  <div id="map"></div>
+</div>
+<script>
+let map, markers=[], locs=[], dir, travelInfo=[];
+const store = {
+  save: (k,v) => { try { localStorage[k]=v; return 1 } catch(e) { try { sessionStorage[k]=v; return 1 } catch(e){} } return 0 },
+  get: k => { try { return localStorage[k]||sessionStorage[k] } catch(e){} return null },
+  clear: k => { try { localStorage.removeItem(k); sessionStorage.removeItem(k) } catch(e){} }
+};
+
+async function loadMapsAPI(apiKey) {
+  return new Promise((resolve, reject) => {
+    if (window.google?.maps) resolve();
+    const script = document.createElement('script');
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places,marker&v=weekly`;
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+}
+
+async function init(save) {
+  if(!save) {
+    ['apiKey','mapId','locs'].forEach(k => store.clear(k));
+    document.querySelectorAll('#key,#mid').forEach(e => e.value='');
+    document.getElementById('app').style.display='none';
+    if (markers.length) markers.forEach(m => m.map=null);
+    markers=[];
+    locs=[];
+    if (map) map=null;
+    return;
+  }
+  
+  const apiKey=document.getElementById('key').value;
+  const mapId=document.getElementById('mid').value;
+  if(!apiKey || !mapId) return alert('API Key and Map ID required');
+  
+  try {
+    await loadMapsAPI(apiKey);
+    
+    store.save('apiKey', apiKey);
+    store.save('mapId', mapId);
+    
+    map = new google.maps.Map(document.getElementById('map'), {
+      zoom: 12,
+      center: {lat:40.7128, lng:-74.0060},
+      mapId: mapId
+    });
+    
+    const autocomplete = new google.maps.places.Autocomplete(document.getElementById('loc'), {
+      fields: ['formatted_address','geometry']
+    });
+    
+    autocomplete.addListener('place_changed', () => {
+      const place = autocomplete.getPlace();
+      if(!place.geometry) return alert('Select a location from dropdown');
+      
+      locs.push({
+        name: place.formatted_address,
+        lat: place.geometry.location.lat(),
+        lng: place.geometry.location.lng(),
+        pinned: false
+      });
+      
+      addMarker(locs.length-1);
+      document.getElementById('loc').value = '';
+      store.save('locs', JSON.stringify(locs));
+      render();
+    });
+    
+    const saved = store.get('locs');
+    if(saved) {
+      locs = JSON.parse(saved);
+      locs.forEach((_,i) => addMarker(i));
+      render();
+    }
+    
+    document.getElementById('app').style.display = 'grid';
+  } catch(err) {
+    console.error('Maps API Error:', err);
+    alert('Error initializing Google Maps');
+    init(0);
+  }
+}
+
+function addMarker(i) {
+  const el = document.createElement('div');
+  el.style.cssText = 'background:#4285F4;color:white;padding:8px;border-radius:50%;font-weight:bold;min-width:20px;text-align:center';
+  el.innerText = (i+1).toString();
+  
+  const marker = new google.maps.marker.AdvancedMarkerElement({
+    position: {lat: locs[i].lat, lng: locs[i].lng},
+    map,
+    content: el
+  });
+  
+  markers[i] = marker;
+  
+  if (markers.length > 1) {
+    const bounds = new google.maps.LatLngBounds();
+    markers.forEach(m => bounds.extend(m.position));
+    map.fitBounds(bounds);
+  }
+}
+
+async function render() {
+  if (locs.length > 1) {
+    await updateTravelInfo();
+  } else {
+    travelInfo = [];
+  }
+  
+  document.getElementById('list').innerHTML = locs.map((l,i) => 
+    `<li draggable="true" ondragstart="handleDragStart(event)" ondragend="handleDragEnd(event)" 
+        data-index="${i}" data-pinned="${l.pinned}">
+      <div style="display:flex;align-items:center;gap:10px;flex:1">
+        <span>${i+1}</span>
+        <div style="flex:1">
+          <div>${l.name}</div>
+          ${i > 0 ? `<div class="travel-info">${travelInfo[i]?.text || ''}</div>` : ''}
+        </div>
+        <button class="pin" onclick="togglePin(${i})" data-pinned="${l.pinned}">📍</button>
+        <button class="delete" onclick="remove(${i})">×</button>
+      </div>
+    </li>`
+  ).join('');
+  updateMarkersAndRoute();
+}
+
+function togglePin(i) {
+  locs[i].pinned = !locs[i].pinned;
+  store.save('locs', JSON.stringify(locs));
+  render();
+}
+
+let dragSource = null;
+
+function handleDragStart(e) {
+  dragSource = e.target;
+  e.target.classList.add('dragging');
+}
+
+function handleDragEnd(e) {
+  e.target.classList.remove('dragging');
+}
+
+function handleDrop(e) {
+  e.preventDefault();
+  const targetLi = e.target.closest('li');
+  if (!targetLi || !dragSource) return;
+  
+  const fromIndex = parseInt(dragSource.dataset.index);
+  const toIndex = parseInt(targetLi.dataset.index);
+  
+  if (fromIndex === toIndex) return;
+  
+  // Move location and marker
+  const [loc] = locs.splice(fromIndex, 1);
+  const [marker] = markers.splice(fromIndex, 1);
+  locs.splice(toIndex, 0, loc);
+  markers.splice(toIndex, 0, marker);
+  
+  store.save('locs', JSON.stringify(locs));
+  render();
+}
+
+function remove(i) {
+  locs.splice(i,1);
+  markers[i].map = null;
+  markers.splice(i,1);
+  store.save('locs',JSON.stringify(locs));
+  markers.forEach((m,i) => m.content.innerText = (i+1).toString());
+  render();
+}
+
+function updateMarkersAndRoute() {
+  markers.forEach((m,i) => m.content.innerText = (i+1).toString());
+  if(locs.length > 1) drawRoute();
+}
+
+async function optimize() {
+  if(locs.length < 2) return;
+  
+  // Find sequences of unpinned locations
+  const segments = [];
+  let current = [];
+  
+  locs.forEach((loc, i) => {
+    if (loc.pinned) {
+      if (current.length > 0) {
+        segments.push({start: current[0], length: current.length});
+        current = [];
+      }
+    } else {
+      current.push(i);
+    }
+  });
+  if (current.length > 0) {
+    segments.push({start: current[0], length: current.length});
+  }
+  
+  for (const segment of segments) {
+    if (segment.length < 2) continue;
+    
+    const segmentLocs = locs.slice(segment.start, segment.start + segment.length);
+    const matrix = await new google.maps.DistanceMatrixService().getDistanceMatrix({
+      origins: segmentLocs,
+      destinations: segmentLocs,
+      travelMode: 'DRIVING',
+      drivingOptions: {
+        departureTime: new Date(),
+        trafficModel: 'bestguess'
+      }
+    });
+    
+    const times = matrix.rows.map(r => 
+      r.elements.map(e => e.duration_in_traffic?.value || e.duration.value)
+    );
+    
+    const order = [];
+    const used = new Set([0]);
+    order.push(0);
+    
+    while(order.length < segment.length) {
+      let last = order[order.length-1], next = -1, min = Infinity;
+      for(let i = 0; i < segment.length; i++) {
+        if(!used.has(i) && times[last][i] < min) {
+          min = times[last][i];
+          next = i;
+        }
+      }
+      used.add(next);
+      order.push(next);
+    }
+    
+    // Reorder just this segment
+    const newSegmentLocs = order.map(i => segmentLocs[i]);
+    const newSegmentMarkers = order.map(i => markers[segment.start + i]);
+    
+    locs.splice(segment.start, segment.length, ...newSegmentLocs);
+    markers.splice(segment.start, segment.length, ...newSegmentMarkers);
+  }
+  
+  store.save('locs', JSON.stringify(locs));
+  render();
+}
+
+async function updateTravelInfo() {
+  if (locs.length < 2) return;
+  
+  const service = new google.maps.DistanceMatrixService();
+  const origins = locs.slice(0, -1);
+  const destinations = locs.slice(1);
+  
+  const response = await service.getDistanceMatrix({
+    origins: origins.map(l => ({lat: l.lat, lng: l.lng})),
+    destinations: destinations.map(l => ({lat: l.lat, lng: l.lng})),
+    travelMode: 'DRIVING',
+    drivingOptions: {
+      departureTime: new Date(),
+      trafficModel: 'bestguess'
+    }
+  });
+  
+  travelInfo = [null]; // First location has no incoming travel
+  response.rows.forEach((row, i) => {
+    const element = row.elements[0];
+    travelInfo[i + 1] = {
+      text: `${element.distance.text}, ${element.duration_in_traffic ? element.duration_in_traffic.text : element.duration.text}`
+    };
+  });
+}
+
+async function drawRoute() {
+  if(dir) dir.setMap(null);
+  dir = new google.maps.DirectionsRenderer({map, suppressMarkers:true});
+  
+  try {
+    const result = await new google.maps.DirectionsService().route({
+      origin: {lat:locs[0].lat, lng:locs[0].lng},
+      destination: {lat:locs[locs.length-1].lat, lng:locs[locs.length-1].lng},
+      waypoints: locs.slice(1,-1).map(l => ({
+        location:{lat:l.lat, lng:l.lng},
+        stopover:true
+      })),
+      travelMode: 'DRIVING'
+    });
+    
+    dir.setDirections(result);
+  } catch(err) {
+    console.error('Route error:', err);
+  }
+}
+
+window.onload = () => {
+  const apiKey = store.get('apiKey');
+  const mapId = store.get('mapId');
+  if(apiKey && mapId) {
+    document.getElementById('key').value = apiKey;
+    document.getElementById('mid').value = mapId;
+    init(1);
+  }
+};
+</script>
+</body>
+</html>
