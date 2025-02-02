@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>MTB Drive Times</title>
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: #f5f5f5;
+        }
+        .location {
+            position: relative;
+        }
+        .location:hover {
+            background: #f8f8f8;
+        }
+        .time {
+            font-weight: 600;
+            color: #2563eb;
+        }
+        .error {
+            color: #dc2626;
+        }
+        #keyIcon {
+            cursor: pointer;
+            background: #2563eb;
+            color: white;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+        }
+        #keyIcon:hover {
+            background: #1d4ed8;
+        }
+        #apiKeySection.collapsed {
+            display: none;
+        }
+        .event-desc {
+            display: none;
+            position: fixed;
+            background: #fff;
+            border: 1px solid #ddd;
+            padding: 10px;
+            border-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            z-index: 10;
+            width: 300px;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+        .event-desc .close-btn {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            cursor: pointer;
+            background: #dc2626;
+            color: white;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+        }
+        .more-details-icon {
+            font-size: 1.2em;
+            color: #2563eb;
+            cursor: pointer;
+        }
+        .more-details-icon:hover {
+            color: #1d4ed8;
+        }
+        .location.highlighted {
+            background-color: #e0f7fa;
+        }
+        .start-address {
+            margin-bottom: 20px;
+        }
+        .error-message {
+            color: #dc2626;
+            margin-top: 10px;
+        }
+        .event-count {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            padding: 5px 10px;
+            font-size: 0.9em;
+            display: flex;
+            align-items: center;
+            color: #ccc;
+        }
+        .location.has-events .event-count {
+            background: #2563eb;
+            color: white;
+        }
+        .event-count i {
+            margin-right: 5px;
+        }
+        .precipitation-chart {
+            width: 100%;
+            height: 50px;
+        }
+        .precipitation-summary {
+            font-size: 0.85em;
+            color: #555;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-md-8">
+                <div class="card mt-4">
+                    <div class="card-body">
+                        <h2>Mountain Biking Drive Times</h2>
+                        <div class="start-address">
+                            <input type="text" id="startAddress" class="form-control" placeholder="Enter start address">
+                            <button class="btn btn-primary mt-2" onclick="saveStartAddress()">Save Start Address</button>
+                            <div id="errorMessage" class="error-message"></div>
+                        </div>
+                        <div id="results" class="mt-4"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card mt-4">
+                    <div class="card-body">
+                        <div id="filterMessage" class="alert alert-info" style="display: none"></div>  
+                        <h3>Today</h3>
+                        <div id="eventsToday"></div>
+                        <h3>Tomorrow</h3>
+                        <div id="eventsTomorrow"></div>
+                        <div id="eventsUpcoming"></div>
+                        <p class="mt-4">Event data provided by <a href="https://more-mtb.org/pages/events" target="_blank">MORE-MTB</a></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="eventDescModal" tabindex="-1" aria-labelledby="eventDescModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="eventDescModalLabel">Event Description</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body" id="eventDescContent"></div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script src="https://kit.fontawesome.com/a076d05399.js"></script>
+    <script>
+let HOME = '';
+const LOCATIONS = [
+    { name: 'Lake Fairfax (South)', address: '1805 Michael Faraday Ct, Reston, VA 20190', filter: ['Fairfax', 'Reston'], latitude: 38.9507, longitude: -77.3391, link: 'https://more-mtb.org/collections/trails/products/lake-fairfax-park' },
+    { name: 'Patapsco (Avalon)', address: '39.219411128772876, -76.75995510101832', filter: ['Patapsco', 'Avalon'], latitude: 39.2194, longitude: -76.7599, link: 'https://more-mtb.org/collections/trails/products/patapsco-valley-state-park' },
+    { name: 'Schaeffer Farms', address: '14920 Schaeffer Rd, Germantown, MD 20874', filter: ['Schaeffer'], latitude: 39.123, longitude: -77.293, link: 'https://more-mtb.org/collections/trails/products/schaeffer-arms' },
+    { name: 'Laurel Hills', address: 'Dairy Rd, Lorton, VA 22079', filter: ['Laurel', 'Lorton'], latitude: 38.704, longitude: -77.254, link: 'https://more-mtb.org/collections/trails/products/laurel-hill' },
+    { name: 'Meadowood', address: '10100 Gunston Rd, Lorton, VA 22079', filter: ['Meadowood', 'Lorton'], latitude: 38.682, longitude: -77.206, link: 'https://more-mtb.org/collections/trails/products/meadowood-recreation-area' },
+    { name: 'Wakefield Park @ Americana Park', address: '4298-4169 Accotink Pkwy, Annandale, VA 22003', filter: ['Wakefield', 'Annandale', 'Accotink'], latitude: 38.815, longitude: -77.218, link: 'https://more-mtb.org/collections/trails/products/wakefield-park' },
+    { name: 'Fountainhead Regional Park', address: '10875 Hampton Rd, Fairfax Station, VA 22039', filter: ['Fountainhead', 'Fairfax'], latitude: 38.703, longitude: -77.333, link: 'https://more-mtb.org/collections/trails/products/fountainhead-regional-park' },
+    { name: 'Rosaryville State Park', address: '7805 W Marlton Ave, Upper Marlboro, MD 20772', filter: ['Rosaryville', 'Marlboro'], latitude: 38.782, longitude: -76.791, link: 'https://more-mtb.org/collections/trails/products/rosaryville-state-park' },
+    { name: 'Seneca Ridge Trail @ Riffle Ford Road', address: '16899 Riffle Ford Rd, Darnestown, MD 20878', filter: ['Seneca'], latitude: 39.123, longitude: -77.293, link: 'https://more-mtb.org/collections/trails/products/seneca-ridge-trail-srt' },
+    { name: 'Shenandoah River State Park', address: '350 Daughter of Stars Dr, Bentonville, VA 22610', filter: ['Shenandoah'], latitude: 38.8488, longitude: -78.3073, link: 'https://more-mtb.org/collections/trails/products/shenandoah-river-state-park' },
+];
+
+const API_KEY = 'AIzaSyAQ10UpLa_ae2rwA9h16XGVnoeV3ryvQBA';
+
+function saveStartAddress() {
+    const address = document.getElementById('startAddress').value;
+    const errorMessage = document.getElementById('errorMessage');
+    if (address.trim() === '') {
+        errorMessage.textContent = 'Please enter a valid start address.';
+        return;
+    }
+    errorMessage.textContent = '';
+    localStorage.setItem('start_address', address);
+    HOME = address;
+    loadScript();
+}
+
+function loadStartAddress() {
+    const address = localStorage.getItem('start_address');
+    if (address) {
+        document.getElementById('startAddress').value = address;
+        HOME = address;
+    }
+}
+
+async function loadEvents() {
+    const eventsTodayDiv = document.getElementById('eventsToday');
+    const eventsTomorrowDiv = document.getElementById('eventsTomorrow');
+    const eventsUpcomingDiv = document.getElementById('eventsUpcoming');
+    eventsTodayDiv.innerHTML = '<div class="text-center text-muted">Loading events...</div>';
+    eventsTomorrowDiv.innerHTML = '<div class="text-center text-muted">Loading events...</div>';
+    eventsUpcomingDiv.innerHTML = '&nbsp;';
+    
+    try {
+        const now = new Date();
+        const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+        const weekFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+        
+        const startDate = now.toISOString().split('T')[0];
+        const endDate = weekFromNow.toISOString().split('T')[0];
+        
+        const url = `https://more-calendar-feed.cloudflare-com-94a.workers.dev/?tz=US/Eastern&start=${startDate}&end=${endDate}`;
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        eventsTodayDiv.innerHTML = '';
+        eventsTomorrowDiv.innerHTML = '';
+        eventsUpcomingDiv.innerHTML = '';
+        
+        const today = new Date().toISOString().split('T')[0];
+        const tomorrowDate = tomorrow.toISOString().split('T')[0];
+        const upcomingEvents = {};
+
+        data.events
+            .sort((a, b) => new Date(a.start.datetime) - new Date(b.start.datetime))
+            .forEach(event => {
+                const startDate = new Date(event.start.datetime);
+                const endDate = new Date(event.end.datetime);
+                const eventDate = startDate.toISOString().split('T')[0];
+                const div = document.createElement('div');
+                div.className = 'event mb-3';
+                div.innerHTML = `
+                    <div class="event-title font-weight-bold">${event.summary}</div>
+                    <div class="event-date text-muted" style="font-size: 0.85em;">${startDate.toLocaleDateString('en-US', {
+                        weekday: 'short',
+                        month: 'short',
+                        day: 'numeric',
+                        hour: 'numeric',
+                        minute: '2-digit'
+                    })} - ${endDate.toLocaleTimeString('en-US', {
+                        hour: 'numeric',
+                        minute: '2-digit'
+                    })}</div>
+                    <div class="event-location text-muted" style="font-size: 0.85em;">
+                        <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.location || '')}" target="_blank">${event.location || ''}</a>
+                    </div>
+                    <div class="event-description" style="display:none;">${event.description || ''}</div>
+                    <a href="#" class="more-details" onclick="showEventDesc(event, this.previousElementSibling.innerHTML)">
+                        more details <i class="fas fa-info-circle more-details-icon"></i>
+                    </a>
+                `;
+                
+                if (eventDate === today) {
+                    eventsTodayDiv.appendChild(div);
+                } else if (eventDate === tomorrowDate) {
+                    eventsTomorrowDiv.appendChild(div);
+                } else {
+                    if (!upcomingEvents[eventDate]) {
+                        upcomingEvents[eventDate] = [];
+                    }
+                    upcomingEvents[eventDate].push(div);
+                }
+            });
+
+        if (eventsTodayDiv.children.length === 0) {
+            eventsTodayDiv.innerHTML = '<div class="text-center text-muted">No events today</div>';
+        }
+
+        if (eventsTomorrowDiv.children.length === 0) {
+            eventsTomorrowDiv.innerHTML = '<div class="text-center text-muted">No events tomorrow</div>';
+        }
+
+        const relativeDate = (date) => {
+            const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+            const eventDate = new Date(date);
+            const diffDays = Math.ceil((eventDate - now) / (1000 * 60 * 60 * 24));
+            if (diffDays === 0) return "Today";
+            if (diffDays === 1) return "Tomorrow";
+            return `${daysOfWeek[eventDate.getDay()]} (${eventDate.toISOString().split('T')[0]})`;
+        };
+
+        Object.keys(upcomingEvents).forEach(date => {
+            const header = document.createElement('h4');
+            header.textContent = relativeDate(date);
+            const eventsForDate = upcomingEvents[date];
+            if (eventsForDate.length > 0) {
+                eventsUpcomingDiv.appendChild(header);
+                eventsForDate.forEach(eventDiv => {
+                    eventsUpcomingDiv.appendChild(eventDiv);
+                });
+            }
+        });
+
+        if (eventsUpcomingDiv.children.length === 0) {
+            eventsUpcomingDiv.innerHTML = '<div class="text-center text-muted">No upcoming events this week</div>';
+        }
+
+        updateEventCounts();
+    } catch (error) {
+        eventsTodayDiv.innerHTML = `<div class="text-danger">Error loading events: ${error.message}</div>`;
+        eventsTomorrowDiv.innerHTML = `<div class="text-danger">Error loading events: ${error.message}</div>`;
+        eventsUpcomingDiv.innerHTML = `<div class="text-danger">Error loading events: ${error.message}</div>`;
+    }
+}
+
+function loadScript() {
+    if (!HOME) {
+        const errorMessage = document.getElementById('errorMessage');
+        errorMessage.textContent = 'Please enter a start address.';
+        return;
+    }
+    const script = document.createElement('script');
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${API_KEY}&libraries=places&callback=initService`;
+    script.async = true;
+    document.head.appendChild(script);
+}
+
+function filterEvents(filterKeywords) {
+    const eventsTodayDiv = document.getElementById('eventsToday');
+    const eventsTomorrowDiv = document.getElementById('eventsTomorrow');
+    const eventsUpcomingDiv = document.getElementById('eventsUpcoming');
+    const allEvents = [...eventsTodayDiv.children, ...eventsTomorrowDiv.children, ...eventsUpcomingDiv.children];
+
+    allEvents.forEach(event => {
+        const eventTitleElement = event.querySelector('.event-title');
+        const eventLocationElement = event.querySelector('.event-location');
+        if (eventTitleElement && eventLocationElement) {
+            const eventTitle = eventTitleElement.textContent.toLowerCase();
+            const eventLocation = eventLocationElement.textContent.toLowerCase();
+            let matches = true;
+            if ( filterKeywords != null ) {
+                matches = filterKeywords.some(keyword => eventTitle.includes(keyword.toLowerCase()) || eventLocation.includes(keyword.toLowerCase()));
+            }
+            event.style.display = matches ? 'block' : 'none';
+        }
+    });
+
+    // Hide date headers with no events
+    const dateHeaders = eventsUpcomingDiv.querySelectorAll('h4');
+    dateHeaders.forEach(header => {
+        let hasEvents = false;
+        let nextElement = header.nextElementSibling;
+        while (nextElement && nextElement.classList.contains('event')) {
+            if (nextElement.style.display === 'block') {
+                hasEvents = true;
+                break;
+            }
+            nextElement = nextElement.nextElementSibling;
+        }
+        header.style.display = hasEvents ? 'block' : 'none';
+    });
+}
+
+function highlightLocation(locationDiv, filterKeywords) {
+    const filterMessage = document.getElementById('filterMessage');
+    if ( locationDiv.classList.contains('highlighted') ) {
+        locationDiv.classList.remove('highlighted');
+        filterEvents(null);
+        filterMessage.textContent = '';
+        filterMessage.style.display = 'none';
+        return;
+    }
+    
+    const allLocations = document.querySelectorAll('.location');
+    allLocations.forEach(loc => loc.classList.remove('highlighted'));
+    locationDiv.classList.add('highlighted');
+    filterEvents(filterKeywords);
+    filterMessage.textContent = `Filtering events for: ${locationDiv.querySelector('strong').textContent}`;
+    filterMessage.style.display = 'block';
+}
+
+function updateEventCounts() {
+    LOCATIONS.forEach(location => {
+        const locationDiv = document.querySelector(`.location[data-name="${location.name}"]`);
+        if (locationDiv) {
+            filterEvents(location.filter);
+            const eventsTodayDiv = document.getElementById('eventsToday');
+            const eventsTomorrowDiv = document.getElementById('eventsTomorrow');
+            const eventsUpcomingDiv = document.getElementById('eventsUpcoming');
+            const allEvents = [...eventsTodayDiv.children, ...eventsTomorrowDiv.children, ...eventsUpcomingDiv.children];
+            const matchingEvents = allEvents.filter(event => event.style.display === 'block');
+            const eventCount = matchingEvents.length;
+
+            const eventCountDiv = locationDiv.querySelector('.event-count');
+            if (eventCountDiv) {
+                eventCountDiv.innerHTML = `<i class="fas fa-calendar-alt"></i> ${eventCount}`;
+            } else {
+                const newEventCountDiv = document.createElement('div');
+                newEventCountDiv.className = 'event-count';
+                newEventCountDiv.innerHTML = `<i class="fas fa-calendar-alt"></i> ${eventCount}`;
+                locationDiv.appendChild(newEventCountDiv);
+            }
+
+            if ( eventCount > 0 ) {
+                locationDiv.classList.add('has-events');
+            }
+        }
+    });
+
+    filterEvents(null)
+}
+
+async function loadPrecipitationData(latitude, longitude) {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=precipitation&hourly=temperature_2m,precipitation&daily=precipitation_sum&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&past_days=14`;
+    const response = await fetch(url);
+    const data = await response.json();
+    return data.daily.precipitation_sum;
+}
+
+function drawPrecipitationChart(precipitationData) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.style.backgroundColor = '#f8f9fa';
+    svg.setAttribute('width', '300');
+    svg.setAttribute('height', '25');
+    
+    const columnWidth = (300 / precipitationData.length) - 5;
+    const maxValue = Math.max(...precipitationData);
+
+    precipitationData.forEach((point, idx) => {
+        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        const rectHeight = (point / maxValue) * 50;
+        rect.setAttribute('x', (idx * (columnWidth + 5)));
+        rect.setAttribute('y', 50 - rectHeight);
+        rect.setAttribute('width', columnWidth);
+        rect.setAttribute('height', rectHeight);
+        rect.setAttribute('fill', '#2563eb');
+
+        const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+        title.textContent = point;
+        rect.appendChild(title);
+
+        svg.appendChild(rect);
+    });
+
+    return svg;
+}
+
+async function addPrecipitationData(locationDiv, latitude, longitude) {
+    const precipitationData = await loadPrecipitationData(latitude, longitude);
+    const chart = drawPrecipitationChart(precipitationData);
+    const summary = document.createElement('div');
+    summary.className = 'precipitation-summary';
+    summary.textContent = `Recent precipitation: ${precipitationData.reduce((a, b) => a + b, 0).toFixed(2)} inches over the last 14 days`;
+    locationDiv.appendChild(summary);
+    locationDiv.appendChild(chart);
+}
+
+function initService() {
+    const service = new google.maps.DistanceMatrixService();
+    const resultsDiv = document.getElementById('results');
+    resultsDiv.innerHTML = '';
+
+    service.getDistanceMatrix({
+        origins: [HOME],
+        destinations: LOCATIONS.map(location => location.address),
+        travelMode: 'DRIVING',
+        unitSystem: google.maps.UnitSystem.IMPERIAL,
+        drivingOptions: {
+            departureTime: new Date(),
+            trafficModel: 'bestguess'
+        }
+    }, (response, status) => {
+        if (status !== 'OK') {
+            resultsDiv.innerHTML = `<div class="text-danger">Error: ${status}</div>`;
+            return;
+        }
+
+        const locationData = response.rows[0].elements.map((element, i) => ({
+            name: LOCATIONS[i].name,
+            address: response.destinationAddresses[i],
+            element: element,
+            duration: element.status === 'OK' ? element.duration.text : 'N/A',
+            durationInTraffic: element.status === 'OK' ? element.duration_in_traffic.text : 'N/A',
+            durationDifference: element.status === 'OK' ? Math.round((element.duration_in_traffic.value - element.duration.value) / 60) : 0,
+            filter: LOCATIONS[i].filter,
+            latitude: LOCATIONS[i].latitude,
+            longitude: LOCATIONS[i].longitude,
+            link: LOCATIONS[i].link
+        }));
+
+        locationData.sort((a, b) => a.element.duration.value - b.element.duration.value);
+
+        locationData.forEach(location => {
+            const div = document.createElement('div');
+            div.className = 'location p-3 mb-3 border rounded';
+            div.setAttribute('data-name', location.name);
+            if (location.element.status === 'OK') {
+                let trafficStyle = '';
+                let trafficIcon = '';
+                let trafficInfo = '';
+                console.debug(location)
+                if (location.durationDifference <= -5) {
+                    trafficStyle = 'text-success';
+                    trafficIcon = '🐇';
+                } else if (location.durationDifference >= 5) {
+                    trafficStyle = 'text-danger';
+                    trafficIcon = '🐢';
+                }
+                let trafficWarning = ''
+                if ( Math.abs(location.durationDifference) >= 5 ) {
+                    trafficWarning = `(<span class=${trafficStyle}>currently ${location.durationInTraffic}</span> ${trafficIcon})`
+                }
+
+                div.innerHTML = `
+                    <strong>${location.name}</strong><br>
+                    <div class="address text-muted">
+                        <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location.address)}" target="_blank">${location.address}</a>
+                    </div>
+                    Distance: ${location.element.distance.text}<br>
+                    Duration: ${location.duration} ${trafficWarning}
+                    <div class="event-count"><i class="fas fa-calendar-alt"></i> 0</div>
+                    <div class="more-link"><a href="${location.link}" target="_blank">Trail Information</a></div>
+                `;
+                div.onclick = () => highlightLocation(div, location.filter);
+                addPrecipitationData(div, location.latitude, location.longitude);
+            } else {
+                div.innerHTML = `<strong>${location.name}</strong><br>Unable to calculate route`;
+            }
+            resultsDiv.appendChild(div);
+        });
+
+        updateEventCounts();
+    });
+}
+
+function showEventDesc(event, description) {
+    event.preventDefault();
+    const content = document.getElementById('eventDescContent');
+    content.innerHTML = description || 'No description available';
+    $('#eventDescModal').modal('show');
+}
+
+function closeEventDesc() {
+    $('#eventDescModal').modal('hide');
+}
+
+window.onload = () => {
+    loadStartAddress();
+    loadScript();
+    loadEvents();
+};
+    </script>
+    
+    <footer class="text-center mt-4">
+        <p>Weather data provided by <a href="https://open-meteo.com/" target="_blank">Open-Meteo</a></p>
+    </footer>
+</body>
+</html>
