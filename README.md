@@ -4,6 +4,8 @@ A collection of simple browser-based utilities written in HTML/JavaScript. Many 
 
 Credit to [https://github.com/simonw/tools](https://github.com/simonw/tools) ([https://tools.simonwillison.net/](https://tools.simonwillison.net/)) for the inspiration.
 
+Some of these tools have command-line versions in [mbafford/cli-tools](https://github.com/mbafford/cli-tools).
+
 # Tools
 
 - [Image/Text to ICS (Calendar) Entry](image-to-ics) - Take an image (or text block) and extract an ICS file for adding to your calendar.  Screenshot a hotel reservation and let the LLM do the work of setting up dates/times/timezones/descriptions/etc.
