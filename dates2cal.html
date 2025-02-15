@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+body{font-family:system-ui,-apple-system,sans-serif;margin:0;padding:20px;line-height:1.4;color:#333}
+.calendar-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin:20px 0}
+.month{background:#fff;padding:10px;border-radius:4px;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+.month-header{text-align:center;font-weight:600;margin-bottom:10px}
+.month-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
+.day{text-align:center;padding:4px;border-radius:2px;position:relative}
+.day.marked{background:#3b82f6;color:#fff;cursor:pointer}
+.day.empty{visibility:hidden}
+.weekday{text-align:center;font-size:.9em;color:#666;padding:4px}
+.year-header{text-align:center;font-size:1.5em;font-weight:600;margin:30px 0 10px;padding-top:20px;border-top:1px solid #eee}
+.instructions{background:#f8f9fa;padding:15px;border-radius:4px;margin-bottom:20px}
+.tooltip{position:absolute;background:#333;color:#fff;padding:8px;border-radius:4px;font-size:14px;width:max-content;max-width:300px;z-index:100;visibility:hidden;opacity:0;transition:opacity 0.2s;white-space:pre-line;left:50%;transform:translateX(-50%);top:100%;margin-top:5px}
+.tooltip::before{content:'';position:absolute;top:-5px;left:50%;transform:translateX(-50%);border-width:0 5px 5px;border-style:solid;border-color:transparent transparent #333}
+.day.marked:hover .tooltip{visibility:visible;opacity:1}
+</style>
+</head>
+<body>
+<div class="instructions">Shows on a calendar all of the dates covered (inclusive) by the pasted in dates or date ranges.  Useful for visualizing missing data - e.g. listing a series of files or extracting date ranges from file content.</div>
+<div class="instructions">Paste list of date ranges (one per line) anywhere on the page. Format: YYYY-MM-DD or YYYY-MM-DD-YYYY-MM-DD.  If both a single date and a range are specified on the same line, the range will be used.</div>
+<div id="calendars"></div>
+
+<script>
+const DAYS = ['Mo','Tu','We','Th','Fr','Sa','Su'];
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+class DateProcessor {
+    constructor() {
+        this.dateContributions = new Map();
+        this.datesByYear = new Map();
+    }
+
+    parseInput(text) {
+        this.clear();  // Clear previous data
+        const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+        lines.forEach(line => {
+            const dates = this.parseDateLine(line);
+            if(dates.length) {
+                this.addDateRange(dates[0], dates[1], line);
+            }
+        });
+        this.render();
+    }
+
+    parseDateLine(line) {
+        const rangeMatch = line.match(/(\d{4}-\d{2}-\d{2})-(\d{4}-\d{2}-\d{2})/);
+        if(rangeMatch) {
+            const start = new Date(rangeMatch[1] + 'T12:00:00');  // Use noon to avoid timezone issues
+            const end = new Date(rangeMatch[2] + 'T12:00:00');
+            if (!isNaN(start) && !isNaN(end)) return [start, end];
+        }
+        const singleMatch = line.match(/(\d{4}-\d{2}-\d{2})/);
+        if(singleMatch) {
+            const date = new Date(singleMatch[1] + 'T12:00:00');
+            if (!isNaN(date)) return [date, date];
+        }
+        return [];
+    }
+
+    addDateRange(start, end, inputLine) {
+        const current = new Date(start);
+        end = new Date(end);
+        
+        while(current <= end) {
+            const dateStr = this.formatDate(current);
+            const year = current.getFullYear();
+            
+            if(!this.datesByYear.has(year)) {
+                this.datesByYear.set(year, new Set());
+            }
+            this.datesByYear.get(year).add(dateStr);
+            
+            if(!this.dateContributions.has(dateStr)) {
+                this.dateContributions.set(dateStr, new Set());
+            }
+            this.dateContributions.get(dateStr).add(inputLine);
+            
+            current.setDate(current.getDate() + 1);
+        }
+    }
+
+    formatDate(date) {
+        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    }
+
+    render() {
+        const years = Array.from(this.datesByYear.keys()).sort((a, b) => a - b);
+        const calendarsHtml = years.map(year => this.renderYear(year)).join('');
+        document.getElementById('calendars').innerHTML = calendarsHtml;
+    }
+
+    renderYear(year) {
+        const markedDates = this.datesByYear.get(year);
+        return `
+            <div class="year-header">${year}</div>
+            <div class="calendar-grid">
+                ${MONTHS.map((month, i) => this.renderMonth(year, i, markedDates)).join('')}
+            </div>`;
+    }
+
+    renderMonth(year, monthIndex, markedDates) {
+        // Create a date object for the first of the month
+        const firstOfMonth = new Date(year, monthIndex, 1, 12);  // Use noon to avoid timezone issues
+        // Get the last day of the month by getting day 0 of next month
+        const lastOfMonth = new Date(year, monthIndex + 1, 0, 12);
+        const daysInMonth = lastOfMonth.getDate();
+        
+        // Calculate first day padding (0 = Sunday, 1 = Monday, etc)
+        const firstDay = firstOfMonth.getDay();
+        const firstWeekPadding = firstDay === 0 ? 6 : firstDay - 1;
+        
+        const days = [];
+        
+        // Add empty cells for padding
+        for(let i = 0; i < firstWeekPadding; i++) {
+            days.push(`<div class="day empty"></div>`);
+        }
+        
+        // Add the actual days
+        for(let date = 1; date <= daysInMonth; date++) {
+            const dateStr = `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(date).padStart(2, '0')}`;
+            const marked = markedDates.has(dateStr) ? 'marked' : '';
+            const tooltip = marked ? `<div class="tooltip">From inputs:\n${Array.from(this.dateContributions.get(dateStr)).join('\n')}</div>` : '';
+            days.push(`<div class="day ${marked}">${date}${tooltip}</div>`);
+        }
+
+        return `
+            <div class="month">
+                <div class="month-header">${MONTHS[monthIndex]}</div>
+                <div class="month-grid">
+                    ${DAYS.map(d => `<div class="weekday">${d}</div>`).join('')}
+                    ${days.join('')}
+                </div>
+            </div>`;
+    }
+
+    clear() {
+        this.dateContributions.clear();
+        this.datesByYear.clear();
+    }
+}
+
+const processor = new DateProcessor();
+
+document.addEventListener('paste', e => {
+    e.preventDefault();
+    const text = e.clipboardData.getData('text');
+    processor.parseInput(text);
+});
+</script>
+</body>
+</html>

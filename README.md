@@ -16,6 +16,7 @@ Credit to [https://github.com/simonw/tools](https://github.com/simonw/tools) ([h
 - [JSON Comparison](json-analyzer-comparison) - Similar to Summarize JSON, but compares two sets of JSON to identify differences
 - [ASCII Checker](ascii-checker) - Identify non-ASCII characters in pasted input
 - [Epoch Time / Timestamps](epoch) - Convert epoch time to ISO8601/RFC3339 and human-readable format and vice versa
+- [Dates to Calendar](dates2cal) - Paste in dates and see them represented on a calendar
 
 # External Tools
 
