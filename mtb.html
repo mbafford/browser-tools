@@ -412,11 +412,34 @@ function updateEventCounts() {
     filterEvents(null)
 }
 
-async function loadPrecipitationData(latitude, longitude) {
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=precipitation&hourly=temperature_2m,precipitation&daily=precipitation_sum&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&past_days=14`;
+async function loadWeatherData(latitude, longitude) {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=precipitation&hourly=temperature_2m,precipitation,apparent_temperature,weather_code&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&past_days=14&timezone=auto`;
     const response = await fetch(url);
     const data = await response.json();
-    return data.daily.precipitation_sum;
+    const ret = {
+        'daily_precipitation': {},
+        'hourly_temperature': {},
+        'hourly_apparent_temperature': {},
+        'temperature_units': data.hourly_units.temperature_2m,
+        'current_hour': data.current.time.split(':')[0] + ':00',
+    }
+    const currentTime = data.current.time;
+    const currentDay = currentTime.split('T')[0]
+    for ( var i = 0; i < data.hourly.time.length; i++ ) {
+        time = data.hourly.time[i]
+        day = time.split('T')[0]
+
+        // only include historical precipitation in the chart - so everything up till "now"
+        if ( time < currentTime ) {
+            ret['daily_precipitation'][day] = (ret['daily_precipitation'][day] || 0) + data.hourly.precipitation[i]
+        }
+        if ( day == currentDay ) {
+            ret['hourly_apparent_temperature'][time] = data.hourly.apparent_temperature[i]
+            ret['hourly_temperature'][time] = data.hourly.temperature_2m[i]
+        }
+    }
+
+    return ret; 
 }
 
 function drawPrecipitationChart(precipitationData) {
@@ -425,10 +448,12 @@ function drawPrecipitationChart(precipitationData) {
     svg.setAttribute('width', '300');
     svg.setAttribute('height', '25');
     
-    const columnWidth = (300 / precipitationData.length) - 5;
-    const maxValue = Math.max(...precipitationData);
+    const columnWidth = (300 / Object.keys(precipitationData).length) - 5;
+    const maxValue = Math.max(...Object.values(precipitationData));
 
-    precipitationData.forEach((point, idx) => {
+    Object.keys(precipitationData).forEach( (key, idx) => {
+        point = precipitationData[key];
+
         const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
         const rectHeight = (point / maxValue) * 50;
         rect.setAttribute('x', (idx * (columnWidth + 5)));
@@ -438,7 +463,7 @@ function drawPrecipitationChart(precipitationData) {
         rect.setAttribute('fill', '#2563eb');
 
         const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
-        title.textContent = point;
+        title.textContent = `${key}: ${point} inches`
         rect.appendChild(title);
 
         svg.appendChild(rect);
@@ -447,14 +472,91 @@ function drawPrecipitationChart(precipitationData) {
     return svg;
 }
 
-async function addPrecipitationData(locationDiv, latitude, longitude) {
-    const precipitationData = await loadPrecipitationData(latitude, longitude);
-    const chart = drawPrecipitationChart(precipitationData);
-    const summary = document.createElement('div');
-    summary.className = 'precipitation-summary';
-    summary.textContent = `Recent precipitation: ${precipitationData.reduce((a, b) => a + b, 0).toFixed(2)} inches over the last 14 days`;
-    locationDiv.appendChild(summary);
-    locationDiv.appendChild(chart);
+function drawTempChart(hourlyTempData, currentHour) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.style.backgroundColor = '#f8f9fa';
+    svg.setAttribute('width', '300');
+    svg.setAttribute('height', '50');
+    
+    const columnWidth = (300 / Object.keys(hourlyTempData).length) - 5;
+    const maxValue = 100; // Math.max(...Object.values(hourlyTempData));
+
+    const getColor = (temp) => {
+        const minTemp = -10;
+        const maxTemp = 100;
+        const cold = [0,0,255];
+        const hot = [255,123,0];
+        const power = 5;
+
+        let t;
+        if (temp <= minTemp) t = 0;
+        else if (temp >= maxTemp) t = 1;
+        else {
+            const midPoint = (minTemp + maxTemp) / 2;
+            const range = (maxTemp - minTemp) / 2;
+            const normalized = (temp - midPoint) / range;
+            t = 1 / (1 + Math.exp(-normalized * power));
+        }
+
+        const rgb = cold.map((c, i) => 
+            Math.round(c + (hot[i] - c) * t)
+        );
+        
+        return `rgb(${rgb.join(',')})`;
+    };
+
+    Object.keys(hourlyTempData).forEach((hour, idx) => {
+        const point = hourlyTempData[hour];
+        
+        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        const rectHeight = (point / maxValue) * 50;
+        rect.setAttribute('x', (idx * (columnWidth + 5)));
+        rect.setAttribute('y', 50 - rectHeight);
+        rect.setAttribute('width', columnWidth);
+        rect.setAttribute('height', rectHeight);
+        rect.setAttribute('fill', getColor(point));
+
+        const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+        title.textContent = `${hour}: ${point} degrees`;
+        rect.appendChild(title);
+
+        svg.appendChild(rect);
+    });
+
+    return svg;
+}
+
+async function addWeatherData(locationDiv, latitude, longitude) {
+    const weatherData = await loadWeatherData(latitude, longitude);
+    const precipitationData = weatherData['daily_precipitation'];
+    const totalPrecip = Object.values(precipitationData).reduce((a, b) => a + b, 0).toFixed(2);
+
+    var precipDays = Object.entries(precipitationData).filter(e => e[1]>0);
+    const mostRecentPrecip = precipDays.at(-1);
+
+    const precipSummary = document.createElement('div');
+    precipSummary.className = 'precipitation-summary';
+    precipSummary.textContent = `Recent precipitation: ${totalPrecip} inches over the last 14 days`
+    if (mostRecentPrecip) {
+        precipSummary.textContent += ` (most recently, ${mostRecentPrecip[1]} inches on ${mostRecentPrecip[0]})`
+    }
+    locationDiv.appendChild(precipSummary);
+
+    const precipChart = drawPrecipitationChart(precipitationData);
+    locationDiv.appendChild(precipChart);
+
+    const hourlyTempData = weatherData['hourly_temperature']
+    const todayTemps = Object.entries(hourlyTempData).sort((a,b) => b[1] - a[1]);
+    const todayHigh = todayTemps[0][1];
+    const todayHighTime = todayTemps[0][0];
+
+    const tempSummary = document.createElement('div');
+    tempSummary.className = 'temperature-summary';
+    tempSummary.textContent = `Today's High: ${todayHigh}${weatherData['temperature_units']} @ ${todayHighTime}`;
+    locationDiv.appendChild(tempSummary)
+
+    const tempChart = drawTempChart(hourlyTempData, weatherData['current_hour']);
+    locationDiv.appendChild(tempChart);
 }
 
 function initService() {
@@ -500,7 +602,7 @@ function initService() {
                 let trafficStyle = '';
                 let trafficIcon = '';
                 let trafficInfo = '';
-                console.debug(location)
+
                 if (location.durationDifference <= -5) {
                     trafficStyle = 'text-success';
                     trafficIcon = '🐇';
@@ -524,7 +626,7 @@ function initService() {
                     <div class="more-link"><a href="${location.link}" target="_blank">Trail Information</a></div>
                 `;
                 div.onclick = () => highlightLocation(div, location.filter);
-                addPrecipitationData(div, location.latitude, location.longitude);
+                addWeatherData(div, location.latitude, location.longitude);
             } else {
                 div.innerHTML = `<strong>${location.name}</strong><br>Unable to calculate route`;
             }
