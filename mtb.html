@@ -4,6 +4,7 @@
     <title>MTB Drive Times</title>
     <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/weather-icons/2.0.10/css/weather-icons.min.css">
     <style>
         body {
             font-family: system-ui, -apple-system, sans-serif;
@@ -11,6 +12,14 @@
         }
         .location {
             position: relative;
+        }
+        .location h3 {
+            font-size: 105%;
+            margin-top: 10px;
+        }        
+        .location h4 {
+            font-size: 100%;
+            margin-top: 10px;
         }
         .location:hover {
             background: #f8f8f8;
@@ -109,6 +118,33 @@
             height: 50px;
         }
         .precipitation-summary {
+            font-size: 0.85em;
+            color: #555;
+        }
+        .forecast-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 10px;
+        }
+        .forecast-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            font-size: 0.85em;
+        }
+        .forecast-icon {
+            font-size: 1.5em;
+        }
+        .forecast-day {
+            font-size: 0.75em;
+            color: #555;
+        }
+        .forecast-precip {
+            font-size: 0.75em;
+            color: #555;
+        }
+        .temperature-summary {
             font-size: 0.85em;
             color: #555;
         }
@@ -413,7 +449,7 @@ function updateEventCounts() {
 }
 
 async function loadWeatherData(latitude, longitude) {
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=precipitation&hourly=temperature_2m,precipitation,apparent_temperature,weather_code&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&past_days=14&timezone=auto`;
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=precipitation&hourly=temperature_2m,precipitation,apparent_temperature,weather_code&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weathercode&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&past_days=14&timezone=auto`;
     const response = await fetch(url);
     const data = await response.json();
     const ret = {
@@ -422,29 +458,115 @@ async function loadWeatherData(latitude, longitude) {
         'hourly_apparent_temperature': {},
         'temperature_units': data.hourly_units.temperature_2m,
         'current_hour': data.current.time.split(':')[0] + ':00',
-    }
+        'daily_forecast': {
+            time: data.daily.time.slice(-7),
+            temperature_2m_max: data.daily.temperature_2m_max.slice(-7),
+            temperature_2m_min: data.daily.temperature_2m_min.slice(-7),
+            precipitation_sum: data.daily.precipitation_sum.slice(-7),
+            weathercode: data.daily.weathercode.slice(-7)
+        }
+    };
     const currentTime = data.current.time;
-    const currentDay = currentTime.split('T')[0]
-    for ( var i = 0; i < data.hourly.time.length; i++ ) {
-        time = data.hourly.time[i]
-        day = time.split('T')[0]
+    const currentDay = currentTime.split('T')[0];
+    for (var i = 0; i < data.hourly.time.length; i++) {
+        const time = data.hourly.time[i];
+        const day = time.split('T')[0];
 
         // only include historical precipitation in the chart - so everything up till "now"
-        if ( time < currentTime ) {
-            ret['daily_precipitation'][day] = (ret['daily_precipitation'][day] || 0) + data.hourly.precipitation[i]
+        if (time < currentTime) {
+            ret['daily_precipitation'][day] = (ret['daily_precipitation'][day] || 0) + data.hourly.precipitation[i];
         }
-        if ( day == currentDay ) {
-            ret['hourly_apparent_temperature'][time] = data.hourly.apparent_temperature[i]
-            ret['hourly_temperature'][time] = data.hourly.temperature_2m[i]
+        if (day === currentDay) {
+            ret['hourly_apparent_temperature'][time] = data.hourly.apparent_temperature[i];
+            ret['hourly_temperature'][time] = data.hourly.temperature_2m[i];
         }
     }
 
-    return ret; 
+    return ret;
+}
+
+async function addWeatherData(locationDiv, latitude, longitude) {
+    const weatherData = await loadWeatherData(latitude, longitude);
+    const precipitationData = weatherData['daily_precipitation'];
+    const totalPrecip = Object.values(precipitationData).reduce((a, b) => a + b, 0).toFixed(2);
+
+    var precipDays = Object.entries(precipitationData).filter(e => e[1] > 0);
+    const mostRecentPrecip = precipDays.at(-1);
+
+    const precipHeader = document.createElement('h4');
+    precipHeader.textContent = 'Recent Precipitation';
+    locationDiv.appendChild(precipHeader);
+
+    const precipSummary = document.createElement('div');
+    precipSummary.className = 'precipitation-summary';
+    precipSummary.textContent = `${totalPrecip} inches over the last 14 days`;
+    if (mostRecentPrecip) {
+        precipSummary.textContent += ` (most recently, ${mostRecentPrecip[1]} inches on ${mostRecentPrecip[0]})`;
+    }
+    locationDiv.appendChild(precipSummary);
+
+    const precipChart = drawPrecipitationChart(precipitationData);
+    locationDiv.appendChild(precipChart);
+
+    const hourlyTempData = weatherData['hourly_temperature'];
+    const todayTemps = Object.entries(hourlyTempData).sort((a, b) => b[1] - a[1]);
+    const todayHigh = todayTemps[0][1];
+    const todayHighTime = todayTemps[0][0];
+
+    const tempHeader = document.createElement('h4');
+    tempHeader.textContent = "Today's Temperatures";
+    locationDiv.appendChild(tempHeader);
+
+    const tempSummary = document.createElement('div');
+    tempSummary.className = 'temperature-summary';
+    tempSummary.textContent = `Today's High: ${todayHigh}${weatherData['temperature_units']} @ ${todayHighTime}`;
+    locationDiv.appendChild(tempSummary);
+
+    const tempChart = drawTempChart(hourlyTempData, weatherData['current_hour']);
+    locationDiv.appendChild(tempChart);
+
+    const forecastIcons = drawForecastIcons(weatherData['daily_forecast']);
+    const forecastHeader = document.createElement('h4');
+    forecastHeader.textContent = 'Weather Forecast';
+    locationDiv.appendChild(forecastHeader);
+    locationDiv.appendChild(forecastIcons);
+}
+
+function drawForecastIcons(dailyForecast) {
+    const forecastDiv = document.createElement('div');
+    forecastDiv.className = 'forecast-container';
+
+    const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    dailyForecast.time.forEach((date, index) => {
+        const tempMax = dailyForecast.temperature_2m_max[index];
+        const tempMin = dailyForecast.temperature_2m_min[index];
+        const precipitation = dailyForecast.precipitation_sum[index];
+        const weatherCode = dailyForecast.weathercode[index];
+        const weatherIcon = getWeatherIcon(weatherCode);
+        let dayLabel = daysOfWeek[new Date(date).getDay()];
+        if ( date == dailyForecast.time[0] ) {
+            dayLabel = `Today (${dayLabel})`;
+        }
+        if ( date == dailyForecast.time[1] ) {
+            dayLabel = `Tomorrow (${dayLabel})`;
+        }
+
+        const forecastItem = document.createElement('div');
+        forecastItem.className = 'forecast-item';
+        forecastItem.innerHTML = `
+            <i class="wi ${weatherIcon} forecast-icon"></i>
+            <div>${tempMax}°/${tempMin}°</div>
+            <div class="forecast-precip">${precipitation} in</div>
+            <div class="forecast-day">${dayLabel}</div>
+        `;
+        forecastDiv.appendChild(forecastItem);
+    });
+
+    return forecastDiv;
 }
 
 function drawPrecipitationChart(precipitationData) {
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.style.backgroundColor = '#f8f9fa';
     svg.setAttribute('width', '300');
     svg.setAttribute('height', '25');
     
@@ -474,7 +596,6 @@ function drawPrecipitationChart(precipitationData) {
 
 function drawTempChart(hourlyTempData, currentHour) {
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.style.backgroundColor = '#f8f9fa';
     svg.setAttribute('width', '300');
     svg.setAttribute('height', '50');
     
@@ -526,37 +647,38 @@ function drawTempChart(hourlyTempData, currentHour) {
     return svg;
 }
 
-async function addWeatherData(locationDiv, latitude, longitude) {
-    const weatherData = await loadWeatherData(latitude, longitude);
-    const precipitationData = weatherData['daily_precipitation'];
-    const totalPrecip = Object.values(precipitationData).reduce((a, b) => a + b, 0).toFixed(2);
-
-    var precipDays = Object.entries(precipitationData).filter(e => e[1]>0);
-    const mostRecentPrecip = precipDays.at(-1);
-
-    const precipSummary = document.createElement('div');
-    precipSummary.className = 'precipitation-summary';
-    precipSummary.textContent = `Recent precipitation: ${totalPrecip} inches over the last 14 days`
-    if (mostRecentPrecip) {
-        precipSummary.textContent += ` (most recently, ${mostRecentPrecip[1]} inches on ${mostRecentPrecip[0]})`
-    }
-    locationDiv.appendChild(precipSummary);
-
-    const precipChart = drawPrecipitationChart(precipitationData);
-    locationDiv.appendChild(precipChart);
-
-    const hourlyTempData = weatherData['hourly_temperature']
-    const todayTemps = Object.entries(hourlyTempData).sort((a,b) => b[1] - a[1]);
-    const todayHigh = todayTemps[0][1];
-    const todayHighTime = todayTemps[0][0];
-
-    const tempSummary = document.createElement('div');
-    tempSummary.className = 'temperature-summary';
-    tempSummary.textContent = `Today's High: ${todayHigh}${weatherData['temperature_units']} @ ${todayHighTime}`;
-    locationDiv.appendChild(tempSummary)
-
-    const tempChart = drawTempChart(hourlyTempData, weatherData['current_hour']);
-    locationDiv.appendChild(tempChart);
+function getWeatherIcon(code) {
+    const icons = {
+        0: 'wi-day-sunny',
+        1: 'wi-day-cloudy',
+        2: 'wi-cloudy',
+        3: 'wi-cloudy',
+        45: 'wi-fog',
+        48: 'wi-fog',
+        51: 'wi-sprinkle',
+        53: 'wi-sprinkle',
+        55: 'wi-sprinkle',
+        56: 'wi-rain-mix',
+        57: 'wi-rain-mix',
+        61: 'wi-rain',
+        63: 'wi-rain',
+        65: 'wi-rain',
+        66: 'wi-rain-mix',
+        67: 'wi-rain-mix',
+        71: 'wi-snow',
+        73: 'wi-snow',
+        75: 'wi-snow',
+        77: 'wi-snow',
+        80: 'wi-showers',
+        81: 'wi-showers',
+        82: 'wi-showers',
+        85: 'wi-snow',
+        86: 'wi-snow',
+        95: 'wi-thunderstorm',
+        96: 'wi-thunderstorm',
+        99: 'wi-thunderstorm'
+    };
+    return icons[code] || 'wi-na';
 }
 
 function initService() {
@@ -616,12 +738,11 @@ function initService() {
                 }
 
                 div.innerHTML = `
-                    <strong>${location.name}</strong><br>
+                    <h3>${location.name}</h3> 
+                    <div><strong>Driving: </strong> ${location.element.distance.text} (${location.duration}) ${trafficWarning}</div>
                     <div class="address text-muted">
                         <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location.address)}" target="_blank">${location.address}</a>
                     </div>
-                    Distance: ${location.element.distance.text}<br>
-                    Duration: ${location.duration} ${trafficWarning}
                     <div class="event-count"><i class="fas fa-calendar-alt"></i> 0</div>
                     <div class="more-link"><a href="${location.link}" target="_blank">Trail Information</a></div>
                 `;
