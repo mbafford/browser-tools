@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Markdown Table Generator</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 20px;
+      color: #333;
+      line-height: 1.5;
+    }
+    h1 {
+      color: #2a5885;
+      margin-bottom: 20px;
+    }
+    .controls {
+      display: flex;
+      gap: 15px;
+      margin-bottom: 15px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    button {
+      background: #3a7bd5;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+    button:hover {
+      background: #2a5885;
+    }
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    input[type="number"] {
+      width: 60px;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+    }
+    .editor-container {
+      position: relative;
+      margin: 30px 0;
+      overflow: auto;
+    }
+    .table-container {
+      margin-left: 40px;
+      margin-top: 40px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      overflow: visible;
+    }
+    table {
+      border-collapse: collapse;
+      min-width: 100%;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 10px;
+      min-width: 100px;
+      position: relative;
+    }
+    th {
+      background: #f5f5f5;
+    }
+    td:focus, th:focus {
+      outline: 2px solid #3a7bd5;
+      outline-offset: -2px;
+    }
+    .output-container {
+      position: relative;
+      margin-top: 30px;
+    }
+    .output {
+      background: #f5f5f5;
+      padding: 15px;
+      border-radius: 4px;
+      white-space: pre-wrap;
+      font-family: monospace;
+      border: 1px solid #ddd;
+    }
+    .copy-btn {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: #eee;
+      color: #333;
+      font-size: 14px;
+    }
+    .help {
+      margin-bottom: 15px;
+      color: #666;
+      font-size: 14px;
+    }
+    
+    /* Row Controls */
+    .row-controls {
+      position: absolute;
+      left: 0;
+      top: 40px;
+      display: flex;
+      flex-direction: column;
+    }
+    .row-control {
+      height: 37px;
+      display: flex;
+      gap: 4px;
+      align-items: center;
+      margin: 2px 4px;
+    }
+    
+    /* Column Controls */
+    .col-controls {
+      position: absolute;
+      left: 40px;
+      top: 0;
+      display: flex;
+    }
+    .col-control {
+      display: flex;
+      gap: 4px;
+      align-items: center;
+      min-width: 100px;
+      margin: 4px 2px;
+      justify-content: center;
+    }
+    
+    /* Control Buttons */
+    .ctrl-btn {
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      font-size: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      background: #f0f0f0;
+      color: #333;
+      border: 1px solid #ccc;
+    }
+    .ctrl-btn:hover {
+      background: #e0e0e0;
+    }
+    .add-btn {
+      color: #1a8754;
+    }
+    .remove-btn {
+      color: #dc3545;
+    }
+    
+    /* Alignment control */
+    .align-control {
+      margin-right: 15px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Markdown Table Generator</h1>
+  <div class="help">Click on cells to edit content. Use Tab to navigate between cells.</div>
+  
+  <div class="controls">
+    <div>
+      <label for="rows">Rows: </label>
+      <input type="number" id="rows" min="1" max="20" value="3">
+    </div>
+    <div>
+      <label for="cols">Columns: </label>
+      <input type="number" id="cols" min="1" max="10" value="3">
+    </div>
+    <button id="update-table">Reset Table</button>
+  </div>
+  
+  <div class="controls">
+    <div class="align-control">
+      <label>Alignment: </label>
+      <select id="text-align">
+        <option value="left">Left</option>
+        <option value="center">Center</option>
+        <option value="right">Right</option>
+      </select>
+    </div>
+    <button id="set-headers">Make First Row Headers</button>
+  </div>
+  
+  <div class="editor-container">
+    <div class="row-controls" id="row-controls"></div>
+    <div class="col-controls" id="col-controls"></div>
+    <div class="table-container">
+      <table id="editor-table"></table>
+    </div>
+  </div>
+  
+  <div class="output-container">
+    <pre class="output" id="markdown-output"></pre>
+    <button class="copy-btn" id="copy-btn">Copy</button>
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const rowsInput = document.getElementById('rows');
+      const colsInput = document.getElementById('cols');
+      const table = document.getElementById('editor-table');
+      const output = document.getElementById('markdown-output');
+      const updateBtn = document.getElementById('update-table');
+      const copyBtn = document.getElementById('copy-btn');
+      const setHeadersBtn = document.getElementById('set-headers');
+      const textAlignSelect = document.getElementById('text-align');
+      const rowControls = document.getElementById('row-controls');
+      const colControls = document.getElementById('col-controls');
+      
+      let tableData = [];
+      let alignments = [];
+      
+      function initTable() {
+        const rows = parseInt(rowsInput.value, 10);
+        const cols = parseInt(colsInput.value, 10);
+        
+        tableData = Array(rows).fill().map(() => Array(cols).fill(''));
+        alignments = Array(cols).fill('left');
+        
+        renderTable();
+        generateMarkdown();
+      }
+      
+      function renderTable() {
+        table.innerHTML = '';
+        rowControls.innerHTML = '';
+        colControls.innerHTML = '';
+        
+        // Create column controls
+        for (let j = 0; j < tableData[0].length; j++) {
+          const colControl = document.createElement('div');
+          colControl.className = 'col-control';
+          colControl.style.width = `${100 / tableData[0].length}%`;
+          
+          const addBtn = document.createElement('button');
+          addBtn.className = 'ctrl-btn add-btn';
+          addBtn.innerHTML = '+';
+          addBtn.title = 'Add column';
+          addBtn.addEventListener('click', () => insertColumn(j));
+          
+          const removeBtn = document.createElement('button');
+          removeBtn.className = 'ctrl-btn remove-btn';
+          removeBtn.innerHTML = '−';
+          removeBtn.title = 'Remove column';
+          removeBtn.disabled = tableData[0].length <= 1;
+          removeBtn.addEventListener('click', () => {
+            if (tableData[0].length > 1) {
+              removeColumn(j);
+            }
+          });
+          
+          colControl.appendChild(addBtn);
+          colControl.appendChild(removeBtn);
+          colControls.appendChild(colControl);
+        }
+        
+        // Create table rows and row controls
+        for (let i = 0; i < tableData.length; i++) {
+          const row = document.createElement('tr');
+          
+          // Create row control
+          const rowControl = document.createElement('div');
+          rowControl.className = 'row-control';
+          
+          const addBtn = document.createElement('button');
+          addBtn.className = 'ctrl-btn add-btn';
+          addBtn.innerHTML = '+';
+          addBtn.title = 'Add row';
+          addBtn.addEventListener('click', () => insertRow(i));
+          
+          const removeBtn = document.createElement('button');
+          removeBtn.className = 'ctrl-btn remove-btn';
+          removeBtn.innerHTML = '−';
+          removeBtn.title = 'Remove row';
+          removeBtn.disabled = tableData.length <= 1;
+          removeBtn.addEventListener('click', () => {
+            if (tableData.length > 1) {
+              removeRow(i);
+            }
+          });
+          
+          rowControl.appendChild(addBtn);
+          rowControl.appendChild(removeBtn);
+          rowControls.appendChild(rowControl);
+          
+          // Create cells
+          for (let j = 0; j < tableData[i].length; j++) {
+            const cell = document.createElement(i === 0 ? 'th' : 'td');
+            cell.textContent = tableData[i][j];
+            cell.contentEditable = 'true';
+            cell.dataset.row = i;
+            cell.dataset.col = j;
+            
+            if (alignments[j] === 'center') {
+              cell.style.textAlign = 'center';
+            } else if (alignments[j] === 'right') {
+              cell.style.textAlign = 'right';
+            }
+            
+            cell.addEventListener('input', () => {
+              tableData[i][j] = cell.textContent;
+              generateMarkdown();
+            });
+            
+            cell.addEventListener('keydown', (e) => {
+              if (e.key === 'Tab') {
+                e.preventDefault();
+                const nextCol = j + (e.shiftKey ? -1 : 1);
+                const nextRow = i + (nextCol < 0 ? -1 : (nextCol >= tableData[i].length ? 1 : 0));
+                const wrappedCol = nextCol < 0 ? tableData[i].length - 1 : (nextCol >= tableData[i].length ? 0 : nextCol);
+                
+                if (nextRow >= 0 && nextRow < tableData.length) {
+                  document.querySelector(`[data-row="${nextRow}"][data-col="${wrappedCol}"]`).focus();
+                }
+              }
+            });
+            
+            row.appendChild(cell);
+          }
+          
+          table.appendChild(row);
+        }
+        
+        // Adjust column control widths to match table columns
+        const adjustColumnWidths = () => {
+          const cells = table.rows[0]?.cells;
+          if (!cells) return;
+          
+          const colControls = document.querySelectorAll('.col-control');
+          for (let j = 0; j < cells.length; j++) {
+            if (colControls[j]) {
+              colControls[j].style.width = `${cells[j].offsetWidth}px`;
+            }
+          }
+        };
+        
+        // Adjust once the table is rendered
+        setTimeout(adjustColumnWidths, 0);
+        
+        // Adjust when window is resized
+        window.addEventListener('resize', adjustColumnWidths);
+      }
+      
+      function generateMarkdown() {
+        if (tableData.length === 0 || tableData[0].length === 0) {
+          output.textContent = '';
+          return;
+        }
+        
+        // Find the maximum width for each column, ensuring minimum width for markdown separators
+        const colWidths = [];
+        for (let j = 0; j < tableData[0].length; j++) {
+          let maxWidth = 3; // Minimum width for --- in markdown
+          for (let i = 0; i < tableData.length; i++) {
+            const cellWidth = tableData[i][j].trim().length;
+            maxWidth = Math.max(maxWidth, cellWidth);
+          }
+          colWidths.push(maxWidth);
+        }
+        
+        let markdown = '';
+        const cols = tableData[0].length;
+        
+        // Header row with padding
+        markdown += '| ' + tableData[0].map((cell, idx) => {
+          const paddedCell = cell.trim() || ' ';
+          return paddedCell.padEnd(colWidths[idx]);
+        }).join(' | ') + ' |\n';
+        
+        // Separator row with alignment
+        markdown += '|';
+        for (let i = 0; i < cols; i++) {
+          const width = colWidths[i];
+          if (alignments[i] === 'center') {
+            // For center alignment: :---:
+            markdown += ' :' + '-'.repeat(Math.max(width - 2, 1)) + ': |';
+          } else if (alignments[i] === 'right') {
+            // For right alignment: ---:
+            markdown += ' ' + '-'.repeat(Math.max(width - 1, 2)) + ': |';
+          } else {
+            // For left alignment: ---
+            markdown += ' ' + '-'.repeat(width) + ' |';
+          }
+        }
+        markdown += '\n';
+        
+        // Content rows with padding
+        for (let i = 1; i < tableData.length; i++) {
+          markdown += '| ' + tableData[i].map((cell, idx) => {
+            const paddedCell = cell.trim() || ' ';
+            if (alignments[idx] === 'right') {
+              return paddedCell.padStart(colWidths[idx]);
+            } else if (alignments[idx] === 'center') {
+              const totalPad = colWidths[idx] - paddedCell.length;
+              const leftPad = Math.floor(totalPad / 2);
+              return ' '.repeat(leftPad) + paddedCell + ' '.repeat(totalPad - leftPad);
+            } else {
+              return paddedCell.padEnd(colWidths[idx]);
+            }
+          }).join(' | ') + ' |\n';
+        }
+        
+        output.textContent = markdown;
+      }
+      
+      function insertRow(index) {
+        const cols = tableData[0].length;
+        tableData.splice(index + 1, 0, Array(cols).fill(''));
+        renderTable();
+        generateMarkdown();
+        rowsInput.value = tableData.length;
+      }
+      
+      function removeRow(index) {
+        if (tableData.length > 1) {
+          tableData.splice(index, 1);
+          renderTable();
+          generateMarkdown();
+          rowsInput.value = tableData.length;
+        }
+      }
+      
+      function insertColumn(index) {
+        tableData.forEach(row => {
+          row.splice(index + 1, 0, '');
+        });
+        alignments.splice(index + 1, 0, alignments[index] || 'left');
+        renderTable();
+        generateMarkdown();
+        colsInput.value = tableData[0].length;
+      }
+      
+      function removeColumn(index) {
+        if (tableData[0].length > 1) {
+          tableData.forEach(row => {
+            row.splice(index, 1);
+          });
+          alignments.splice(index, 1);
+          renderTable();
+          generateMarkdown();
+          colsInput.value = tableData[0].length;
+        }
+      }
+      
+      updateBtn.addEventListener('click', initTable);
+      
+      copyBtn.addEventListener('click', () => {
+        // Fallback method for clipboard copying
+        function fallbackCopyTextToClipboard(text) {
+          const textArea = document.createElement("textarea");
+          textArea.value = text;
+          
+          // Make the textarea out of viewport
+          textArea.style.position = "fixed";
+          textArea.style.left = "-999999px";
+          textArea.style.top = "-999999px";
+          document.body.appendChild(textArea);
+          textArea.focus();
+          textArea.select();
+          
+          let successful = false;
+          try {
+            successful = document.execCommand('copy');
+          } catch (err) {
+            console.error('Fallback: Unable to copy', err);
+          }
+          
+          document.body.removeChild(textArea);
+          return successful;
+        }
+        
+        // Try to use the modern clipboard API first
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(output.textContent)
+            .then(() => {
+              copyBtn.textContent = 'Copied!';
+              setTimeout(() => { copyBtn.textContent = 'Copy'; }, 2000);
+            })
+            .catch(err => {
+              console.error('Clipboard API error:', err);
+              // Fall back to execCommand
+              const success = fallbackCopyTextToClipboard(output.textContent);
+              if (success) {
+                copyBtn.textContent = 'Copied!';
+                setTimeout(() => { copyBtn.textContent = 'Copy'; }, 2000);
+              } else {
+                copyBtn.textContent = 'Copy failed';
+                setTimeout(() => { copyBtn.textContent = 'Copy'; }, 2000);
+              }
+            });
+        } else {
+          // Use execCommand as fallback
+          const success = fallbackCopyTextToClipboard(output.textContent);
+          if (success) {
+            copyBtn.textContent = 'Copied!';
+            setTimeout(() => { copyBtn.textContent = 'Copy'; }, 2000);
+          } else {
+            copyBtn.textContent = 'Copy failed';
+            setTimeout(() => { copyBtn.textContent = 'Copy'; }, 2000);
+          }
+        }
+      });
+      
+      setHeadersBtn.addEventListener('click', () => {
+        if (tableData.length > 0) {
+          // Get current first row
+          const headers = [...tableData[0]];
+          
+          // Clear table if we already have data
+          if (tableData.length > 1) {
+            // Keep all data but replace first row
+            tableData[0] = headers;
+          } else {
+            // If we only have one row, add a blank row
+            tableData.push(Array(headers.length).fill(''));
+          }
+          
+          renderTable();
+          generateMarkdown();
+        }
+      });
+      
+      textAlignSelect.addEventListener('change', () => {
+        const align = textAlignSelect.value;
+        const cells = document.querySelectorAll('th, td');
+        
+        alignments = alignments.map(() => align);
+        
+        cells.forEach(cell => {
+          cell.style.textAlign = align;
+        });
+        
+        generateMarkdown();
+      });
+      
+      initTable();
+    });
+  </script>
+</body>
+</html>
