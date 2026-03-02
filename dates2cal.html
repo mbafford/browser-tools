@@ -7,77 +7,198 @@ body{font-family:system-ui,-apple-system,sans-serif;margin:0;padding:20px;line-h
 .month{background:#fff;padding:10px;border-radius:4px;box-shadow:0 1px 3px rgba(0,0,0,.1)}
 .month-header{text-align:center;font-weight:600;margin-bottom:10px}
 .month-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
-.day{text-align:center;padding:4px;border-radius:2px;position:relative}
-.day.marked{background:#3b82f6;color:#fff;cursor:pointer}
+.day{text-align:center;padding:4px;border-radius:2px;position:relative;font-size:.85em}
+.day.marked{cursor:pointer}
+.day.marked-single{color:#fff}
+.day.today{box-shadow:inset 0 0 0 2px #f97316}
 .day.empty{visibility:hidden}
 .weekday{text-align:center;font-size:.9em;color:#666;padding:4px}
 .year-header{text-align:center;font-size:1.5em;font-weight:600;margin:30px 0 10px;padding-top:20px;border-top:1px solid #eee}
 .instructions{background:#f8f9fa;padding:15px;border-radius:4px;margin-bottom:20px}
-.tooltip{position:absolute;background:#333;color:#fff;padding:8px;border-radius:4px;font-size:14px;width:max-content;max-width:300px;z-index:100;visibility:hidden;opacity:0;transition:opacity 0.2s;white-space:pre-line;left:50%;transform:translateX(-50%);top:100%;margin-top:5px}
+.example-box{background:#f0f4ff;border:1px solid #c7d4f0;padding:15px;border-radius:4px;margin-bottom:20px}
+.example-header{font-weight:600;margin-bottom:8px}
+.example-hint{font-weight:400;color:#666;font-size:.85em}
+.example-input{width:100%;box-sizing:border-box;font-family:'SF Mono',Monaco,Consolas,monospace;font-size:.9em;padding:10px;border:1px solid #d0d7e3;border-radius:4px;background:#fff;resize:none;line-height:1.5;height:auto;overflow:hidden}
+.controls{display:flex;gap:15px;align-items:center;margin-bottom:15px;flex-wrap:wrap}
+.controls label{display:flex;align-items:center;gap:5px;font-size:.9em;white-space:nowrap}
+.controls input[type="month"]{font-family:inherit;font-size:.9em;padding:4px 8px;border:1px solid #ccc;border-radius:4px}
+.legend{display:flex;gap:15px;flex-wrap:wrap;margin-bottom:15px}
+.legend-item{display:flex;align-items:center;gap:5px;font-size:.9em}
+.legend-swatch{width:12px;height:12px;border-radius:3px;flex-shrink:0}
+.tooltip{position:absolute;background:#333;color:#fff;padding:8px;border-radius:4px;font-size:14px;width:max-content;max-width:300px;z-index:100;visibility:hidden;opacity:0;transition:opacity 0.2s;white-space:pre-line;left:50%;transform:translateX(-50%);top:100%;margin-top:5px;text-align:left}
 .tooltip::before{content:'';position:absolute;top:-5px;left:50%;transform:translateX(-50%);border-width:0 5px 5px;border-style:solid;border-color:transparent transparent #333}
 .day.marked:hover .tooltip{visibility:visible;opacity:1}
+.tooltip-line{display:flex;align-items:center;gap:5px;margin:2px 0}
+.tooltip-swatch{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.color-dots{display:flex;gap:2px;justify-content:center;margin-top:1px}
+.color-dot{width:6px;height:6px;border-radius:50%}
 </style>
 </head>
 <body>
-<div class="instructions">Shows on a calendar all of the dates covered (inclusive) by the pasted in dates or date ranges.  Useful for visualizing missing data - e.g. listing a series of files or extracting date ranges from file content.</div>
-<div class="instructions">Paste list of date ranges (one per line) anywhere on the page. Format: YYYY-MM-DD or YYYY-MM-DD-YYYY-MM-DD.  If both a single date and a range are specified on the same line, the range will be used.</div>
+<div class="instructions">Shows on a calendar all of the dates covered (inclusive) by the entered dates or date ranges. Useful for visualizing missing data, schedules, or events.</div>
+<div class="instructions">Enter date ranges below (one per line). Format: <code>YYYY-MM-DD</code> or <code>YYYY-MM-DD-YYYY-MM-DD</code>. Dates can appear anywhere in the line. Optionally add a color (<code>#rgb</code> or <code>#rrggbb</code>) and a description. Define reusable categories with <code>#name Label</code> on their own line (colors auto-assigned from a palette, or specify one with <code>#name #color Label</code>), then tag date lines with <code>#name</code>.</div>
+<div class="example-box">
+<div class="example-header">Input <span class="example-hint">(edit below &mdash; calendar updates live)</span></div>
+<textarea class="example-input" id="mainInput"></textarea>
+</div>
+<div class="controls">
+    <label>From <input type="month" id="startMonth"></label>
+    <label>To <input type="month" id="endMonth"></label>
+    <label><input type="checkbox" id="showToday"> Show today</label>
+</div>
+<div id="legend"></div>
 <div id="calendars"></div>
 
 <script>
 const DAYS = ['Mo','Tu','We','Th','Fr','Sa','Su'];
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const DEFAULT_COLOR = '#3b82f6';
+const PALETTE = ['#3b82f6','#e74c3c','#22c55e','#f59e0b','#a855f7','#14b8a6','#6366f1','#ec4899','#eab308','#6b7280'];
+const HEX_RE = /(^|[\s])#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})(?=\s|$)/;
+const TAG_RE = /(^|[\s])#([a-zA-Z_][\w-]*)(?=\s|$)/;
+const DATE_RE = /\d{4}-\d{2}-\d{2}/;
 
 class DateProcessor {
     constructor() {
-        this.dateContributions = new Map();
-        this.datesByYear = new Map();
+        this.dateEntries = new Map();   // dateStr → Array of { color, description, line }
+        this.datesByYear = new Map();   // year → Set of dateStrs
+        this.categories = new Map();    // name → { color, label }
     }
 
     parseInput(text) {
-        this.clear();  // Clear previous data
+        this.clear();
         const lines = text.split('\n').map(l => l.trim()).filter(l => l);
-        lines.forEach(line => {
-            const dates = this.parseDateLine(line);
-            if(dates.length) {
-                this.addDateRange(dates[0], dates[1], line);
+
+        // Pass 1: collect category definitions
+        // A category line has a #name tag, a #hex color, and no date
+        const dateLines = [];
+        for(const line of lines) {
+            if(DATE_RE.test(line)) {
+                dateLines.push(line);
+                continue;
             }
-        });
+            const cat = this.parseCategoryLine(line);
+            if(cat) {
+                this.categories.set(cat.name, { color: cat.color, label: cat.label });
+            }
+            // Lines that aren't categories and have no dates are silently ignored
+        }
+
+        // Pass 2: parse date lines
+        for(const line of dateLines) {
+            const parsed = this.parseDateLine(line);
+            if(parsed) {
+                this.addDateRange(parsed.start, parsed.end, parsed.color, parsed.description, line);
+            }
+        }
+
         this.render();
     }
 
-    parseDateLine(line) {
-        const rangeMatch = line.match(/(\d{4}-\d{2}-\d{2})-(\d{4}-\d{2}-\d{2})/);
-        if(rangeMatch) {
-            const start = new Date(rangeMatch[1] + 'T12:00:00');  // Use noon to avoid timezone issues
-            const end = new Date(rangeMatch[2] + 'T12:00:00');
-            if (!isNaN(start) && !isNaN(end)) return [start, end];
-        }
-        const singleMatch = line.match(/(\d{4}-\d{2}-\d{2})/);
-        if(singleMatch) {
-            const date = new Date(singleMatch[1] + 'T12:00:00');
-            if (!isNaN(date)) return [date, date];
-        }
-        return [];
+    parseCategoryLine(line) {
+        // Must have a #name tag and no date. #hex color is optional.
+        const tagMatch = line.match(TAG_RE);
+        if(!tagMatch) return null;
+
+        const name = tagMatch[2].toLowerCase();
+
+        // Check for an explicit hex color (remove the tag first so #name isn't matched as hex)
+        const withoutTag = line.replace(new RegExp('(^|[\\s])#' + this.escapeRegex(tagMatch[2]) + '(?=\\s|$)'), '$1');
+        const hexMatch = withoutTag.match(HEX_RE);
+        const color = hexMatch
+            ? '#' + hexMatch[2]
+            : PALETTE[this.categories.size % PALETTE.length];
+
+        // Label is everything left after removing tag and hex tokens
+        let label = line;
+        label = label.replace(new RegExp('(^|[\\s])#' + this.escapeRegex(tagMatch[2]) + '(?=\\s|$)'), '$1');
+        if(hexMatch) label = label.replace(HEX_RE, '$1');
+        label = label.trim();
+
+        return { name, color, label: label || name };
     }
 
-    addDateRange(start, end, inputLine) {
+    parseDateLine(line) {
+        // Check for a category tag
+        let color = null;
+        let catTagMatch = null;
+        const tagMatch = line.match(TAG_RE);
+        if(tagMatch) {
+            const catName = tagMatch[2].toLowerCase();
+            const cat = this.categories.get(catName);
+            if(cat) {
+                color = cat.color;
+                catTagMatch = tagMatch;
+            }
+        }
+
+        // Fall back to inline hex color
+        if(!color) {
+            const hexMatch = line.match(HEX_RE);
+            if(hexMatch) {
+                color = '#' + hexMatch[2];
+            }
+        }
+        if(!color) color = DEFAULT_COLOR;
+
+        // Extract date range or single date
+        let start, end;
+        const rangeMatch = line.match(/(\d{4}-\d{2}-\d{2})-(\d{4}-\d{2}-\d{2})/);
+        if(rangeMatch) {
+            start = new Date(rangeMatch[1] + 'T12:00:00');
+            end = new Date(rangeMatch[2] + 'T12:00:00');
+            if(isNaN(start) || isNaN(end)) return null;
+        } else {
+            const singleMatch = line.match(/(\d{4}-\d{2}-\d{2})/);
+            if(singleMatch) {
+                start = new Date(singleMatch[1] + 'T12:00:00');
+                if(isNaN(start)) return null;
+                end = new Date(start);
+            } else {
+                return null;
+            }
+        }
+
+        // Build description: strip date, color, and category tokens
+        let desc = line;
+        if(rangeMatch) {
+            desc = desc.replace(rangeMatch[0], '');
+        } else {
+            desc = desc.replace(/\d{4}-\d{2}-\d{2}/, '');
+        }
+        if(catTagMatch) {
+            desc = desc.replace(new RegExp('(^|[\\s])#' + this.escapeRegex(catTagMatch[2]) + '(?=\\s|$)'), '$1');
+        } else {
+            // Strip inline hex if used
+            desc = desc.replace(HEX_RE, '$1');
+        }
+        desc = desc.trim();
+
+        return { start, end, color, description: desc };
+    }
+
+    escapeRegex(str) {
+        return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    addDateRange(start, end, color, description, line) {
         const current = new Date(start);
         end = new Date(end);
-        
+
         while(current <= end) {
             const dateStr = this.formatDate(current);
             const year = current.getFullYear();
-            
+
             if(!this.datesByYear.has(year)) {
                 this.datesByYear.set(year, new Set());
             }
             this.datesByYear.get(year).add(dateStr);
-            
-            if(!this.dateContributions.has(dateStr)) {
-                this.dateContributions.set(dateStr, new Set());
+
+            if(!this.dateEntries.has(dateStr)) {
+                this.dateEntries.set(dateStr, []);
             }
-            this.dateContributions.get(dateStr).add(inputLine);
-            
+            this.dateEntries.get(dateStr).push({ color, description, line });
+
             current.setDate(current.getDate() + 1);
         }
     }
@@ -87,44 +208,113 @@ class DateProcessor {
     }
 
     render() {
-        const years = Array.from(this.datesByYear.keys()).sort((a, b) => a - b);
-        const calendarsHtml = years.map(year => this.renderYear(year)).join('');
-        document.getElementById('calendars').innerHTML = calendarsHtml;
+        // Render legend
+        this.renderLegend();
+
+        const startVal = document.getElementById('startMonth').value;
+        const endVal = document.getElementById('endMonth').value;
+        const showToday = document.getElementById('showToday').checked;
+        const todayStr = showToday ? this.formatDate(new Date()) : null;
+
+        let monthList = null;
+
+        if(startVal && endVal) {
+            const [sy, sm] = startVal.split('-').map(Number);
+            const [ey, em] = endVal.split('-').map(Number);
+            if(sy && sm && ey && em) {
+                monthList = [];
+                let y = sy, m = sm;
+                while(y < ey || (y === ey && m <= em)) {
+                    monthList.push({ year: y, monthIndex: m - 1 });
+                    m++;
+                    if(m > 12) { m = 1; y++; }
+                }
+            }
+        }
+
+        if(!monthList) {
+            const years = Array.from(this.datesByYear.keys()).sort((a, b) => a - b);
+            monthList = [];
+            for(const year of years) {
+                for(let mi = 0; mi < 12; mi++) {
+                    monthList.push({ year, monthIndex: mi });
+                }
+            }
+        }
+
+        const byYear = new Map();
+        for(const { year, monthIndex } of monthList) {
+            if(!byYear.has(year)) byYear.set(year, []);
+            byYear.get(year).push(monthIndex);
+        }
+
+        const html = Array.from(byYear.entries())
+            .sort((a, b) => a[0] - b[0])
+            .map(([year, months]) => `
+                <div class="year-header">${year}</div>
+                <div class="calendar-grid">
+                    ${months.map(mi => this.renderMonth(year, mi, todayStr)).join('')}
+                </div>`
+            ).join('');
+
+        document.getElementById('calendars').innerHTML = html;
     }
 
-    renderYear(year) {
-        const markedDates = this.datesByYear.get(year);
-        return `
-            <div class="year-header">${year}</div>
-            <div class="calendar-grid">
-                ${MONTHS.map((month, i) => this.renderMonth(year, i, markedDates)).join('')}
-            </div>`;
+    renderLegend() {
+        const legendEl = document.getElementById('legend');
+        if(this.categories.size === 0) {
+            legendEl.innerHTML = '';
+            return;
+        }
+        const items = Array.from(this.categories.entries()).map(([name, {color, label}]) =>
+            `<div class="legend-item"><span class="legend-swatch" style="background:${color}"></span>${this.escapeHtml(label)}</div>`
+        ).join('');
+        legendEl.innerHTML = `<div class="legend">${items}</div>`;
     }
 
-    renderMonth(year, monthIndex, markedDates) {
-        // Create a date object for the first of the month
-        const firstOfMonth = new Date(year, monthIndex, 1, 12);  // Use noon to avoid timezone issues
-        // Get the last day of the month by getting day 0 of next month
+    renderMonth(year, monthIndex, todayStr) {
+        const firstOfMonth = new Date(year, monthIndex, 1, 12);
         const lastOfMonth = new Date(year, monthIndex + 1, 0, 12);
         const daysInMonth = lastOfMonth.getDate();
-        
-        // Calculate first day padding (0 = Sunday, 1 = Monday, etc)
+
         const firstDay = firstOfMonth.getDay();
         const firstWeekPadding = firstDay === 0 ? 6 : firstDay - 1;
-        
+
         const days = [];
-        
-        // Add empty cells for padding
+
         for(let i = 0; i < firstWeekPadding; i++) {
             days.push(`<div class="day empty"></div>`);
         }
-        
-        // Add the actual days
+
         for(let date = 1; date <= daysInMonth; date++) {
             const dateStr = `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(date).padStart(2, '0')}`;
-            const marked = markedDates.has(dateStr) ? 'marked' : '';
-            const tooltip = marked ? `<div class="tooltip">From inputs:\n${Array.from(this.dateContributions.get(dateStr)).join('\n')}</div>` : '';
-            days.push(`<div class="day ${marked}">${date}${tooltip}</div>`);
+            const isToday = dateStr === todayStr;
+            const entries = this.dateEntries.get(dateStr);
+            let classes = 'day';
+            if(isToday) classes += ' today';
+
+            if(entries && entries.length > 0) {
+                classes += ' marked';
+                let style = '';
+                let dotsHtml = '';
+
+                if(entries.length === 1) {
+                    style = `background:${entries[0].color};`;
+                    classes += ' marked-single';
+                } else {
+                    dotsHtml = `<div class="color-dots">${entries.map(e => `<div class="color-dot" style="background:${e.color}"></div>`).join('')}</div>`;
+                }
+
+                const tooltipLines = entries.map(e => {
+                    const label = e.description || e.line;
+                    return `<div class="tooltip-line"><span class="tooltip-swatch" style="background:${e.color}"></span>${this.escapeHtml(label)}</div>`;
+                }).join('');
+                const tooltip = `<div class="tooltip">${tooltipLines}</div>`;
+
+                days.push(`<div class="${classes}" style="${style}">${date}${dotsHtml}${tooltip}</div>`);
+            } else {
+                days.push(`<div class="${classes}">${date}</div>`);
+            }
         }
 
         return `
@@ -137,19 +327,154 @@ class DateProcessor {
             </div>`;
     }
 
+    escapeHtml(str) {
+        return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
     clear() {
-        this.dateContributions.clear();
+        this.dateEntries.clear();
         this.datesByYear.clear();
+        this.categories.clear();
     }
 }
 
 const processor = new DateProcessor();
+const textarea = document.getElementById('mainInput');
+const startMonth = document.getElementById('startMonth');
+const endMonth = document.getElementById('endMonth');
+const showTodayCheckbox = document.getElementById('showToday');
 
-document.addEventListener('paste', e => {
-    e.preventDefault();
-    const text = e.clipboardData.getData('text');
-    processor.parseInput(text);
+const EXAMPLE_CONTENT = `#outage Outages
+#work Work
+#travel Travel
+
+2026-01-15 #outage server outage
+#work 2026-02-01-2026-02-14 sprint 1
+2026-03-10
+report_2026-06-01-2026-06-30.csv
+#travel 2026-12-24-2026-12-31 holiday trip`;
+
+// --- State encode/decode for URL hash (deflate-raw + base64url) ---
+function getState() {
+    const s = { t: textarea.value };
+    if(startMonth.value) s.s = startMonth.value;
+    if(endMonth.value) s.e = endMonth.value;
+    if(showTodayCheckbox.checked) s.d = true;
+    return s;
+}
+
+function applyState(state) {
+    if(typeof state === 'string') {
+        textarea.value = state;
+        startMonth.value = '';
+        endMonth.value = '';
+        showTodayCheckbox.checked = false;
+    } else {
+        textarea.value = state.t || '';
+        startMonth.value = state.s || '';
+        endMonth.value = state.e || '';
+        showTodayCheckbox.checked = !!state.d;
+    }
+}
+
+async function compressToHash(obj) {
+    const text = JSON.stringify(obj);
+    const bytes = new TextEncoder().encode(text);
+    const cs = new CompressionStream('deflate-raw');
+    const writer = cs.writable.getWriter();
+    writer.write(bytes);
+    writer.close();
+    const chunks = [];
+    const reader = cs.readable.getReader();
+    while(true) {
+        const { done, value } = await reader.read();
+        if(done) break;
+        chunks.push(value);
+    }
+    const buf = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0));
+    let offset = 0;
+    for(const c of chunks) { buf.set(c, offset); offset += c.length; }
+    return btoa(String.fromCharCode(...buf)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+async function decompressFromHash(hash) {
+    let b64 = hash.replace(/-/g, '+').replace(/_/g, '/');
+    while(b64.length % 4) b64 += '=';
+    const binary = atob(b64);
+    const bytes = Uint8Array.from(binary, c => c.charCodeAt(0));
+    const ds = new DecompressionStream('deflate-raw');
+    const writer = ds.writable.getWriter();
+    writer.write(bytes);
+    writer.close();
+    const chunks = [];
+    const reader = ds.readable.getReader();
+    while(true) {
+        const { done, value } = await reader.read();
+        if(done) break;
+        chunks.push(value);
+    }
+    const buf = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0));
+    let offset = 0;
+    for(const c of chunks) { buf.set(c, offset); offset += c.length; }
+    const text = new TextDecoder().decode(buf);
+    try {
+        return JSON.parse(text);
+    } catch(e) {
+        return text;
+    }
+}
+
+// Auto-grow textarea
+function autoGrow() {
+    textarea.style.height = 'auto';
+    textarea.style.height = textarea.scrollHeight + 'px';
+}
+
+// Debounced live update
+let debounceTimer;
+function scheduleUpdate() {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(async () => {
+        processor.parseInput(textarea.value);
+        const encoded = await compressToHash(getState());
+        history.replaceState(null, '', '#' + encoded);
+    }, 150);
+}
+
+textarea.addEventListener('input', () => { autoGrow(); scheduleUpdate(); });
+startMonth.addEventListener('input', scheduleUpdate);
+endMonth.addEventListener('input', scheduleUpdate);
+showTodayCheckbox.addEventListener('change', scheduleUpdate);
+
+// Handle back/forward navigation
+window.addEventListener('hashchange', async () => {
+    const hash = location.hash.slice(1);
+    if(hash) {
+        try {
+            applyState(await decompressFromHash(hash));
+        } catch(e) {
+            applyState(decodeURIComponent(hash));
+        }
+        autoGrow();
+        processor.parseInput(textarea.value);
+    }
 });
+
+// On page load
+(async () => {
+    const hash = location.hash.slice(1);
+    if(hash) {
+        try {
+            applyState(await decompressFromHash(hash));
+        } catch(e) {
+            applyState(decodeURIComponent(hash));
+        }
+    } else {
+        textarea.value = EXAMPLE_CONTENT;
+    }
+    autoGrow();
+    processor.parseInput(textarea.value);
+})();
 </script>
 </body>
 </html>
