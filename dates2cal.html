@@ -25,7 +25,8 @@ body{font-family:system-ui,-apple-system,sans-serif;margin:0;padding:20px;line-h
 .help-palette-swatch{width:16px;height:16px;border-radius:3px;position:relative;cursor:default}
 .help-palette-swatch::after{content:attr(data-n);position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff;font-weight:600;opacity:0;transition:opacity .15s}
 .help-palette-swatch:hover::after{opacity:1}
-.help-example{background:#fff;border:1px solid #ddd;border-radius:4px;padding:10px;font-family:'SF Mono',Monaco,Consolas,monospace;font-size:.85em;white-space:pre;line-height:1.5;margin-top:10px;color:#555}
+.help-example{background:#fff;border:1px solid #ddd;border-radius:4px;padding:10px;font-family:'SF Mono',Monaco,Consolas,monospace;font-size:.85em;white-space:pre-wrap;line-height:1.5;margin-top:10px;color:#555}
+.help-swatch{display:inline-block;width:10px;height:10px;border-radius:2px;vertical-align:middle;margin-left:1px}
 .help-toggle{width:28px;height:28px;border-radius:50%;border:1px solid #ccc;background:#fff;cursor:pointer;font-size:.9em;font-weight:600;color:#666;display:flex;align-items:center;justify-content:center;flex-shrink:0;padding:0;line-height:1}
 .help-toggle:hover{background:#f0f0f0;color:#333}
 .help-toggle.active{background:#3b82f6;color:#fff;border-color:#3b82f6}
@@ -78,18 +79,19 @@ body{font-family:system-ui,-apple-system,sans-serif;margin:0;padding:20px;line-h
 <p>Enter date ranges below (one per line). Format: <code>YYYY-MM-DD</code> or <code>YYYY-MM-DD-YYYY-MM-DD</code>. Dates can appear anywhere in the line. Optionally add a color (<code>#rgb</code> or <code>#rrggbb</code>) and a description. Define reusable categories with <code>#name Label</code> on their own line (colors auto-assigned from a palette, or specify one with <code>#name #color Label</code>), then tag date lines with <code>#name</code>.</p>
 <p>Named colors (use <code>#name1</code>&ndash;<code>#name8</code>, e.g. <code>#earth3</code>):</p>
 <div id="helpPalettes" class="help-palettes"></div>
-<div class="help-example">#outage Outages
-#work Work
-#travel #earth3 Travel
-#alerts #ff0000 Alerts
+<div class="help-example">#outage Outages <span class="help-swatch" style="background:#3b82f6"></span>
+#work Work <span class="help-swatch" style="background:#e74c3c"></span>
+#travel #earth3 Travel <span class="help-swatch" style="background:#5a8a42"></span>
+#alerts #ff0000 Alerts <span class="help-swatch" style="background:#ff0000"></span>
 
 2026-01-15 #outage server outage
 #work 2026-02-01-2026-02-14 sprint 1
+#work 2026-02-15 #neon1 launch day <span class="help-swatch" style="background:#f03e6e"></span>
 2026-03-10
 report_2026-06-01-2026-06-30.csv
 #travel 2026-12-24-2026-12-31 holiday trip
-2026-04-01 #sunset5 conference
-2026-07-04 #c0392b fireworks</div>
+2026-04-01 #sunset5 conference <span class="help-swatch" style="background:#b83858"></span>
+2026-07-04 #c0392b fireworks <span class="help-swatch" style="background:#c0392b"></span></div>
 </div>
 <div class="example-box">
 <div class="example-header">Input <span class="example-hint">(edit below &mdash; calendar updates live)</span></div>
@@ -223,6 +225,7 @@ class DateProcessor {
         let color = null;
         let catTagMatch = null;
         let namedColorTag = null;
+        let inlineHexUsed = false;
         const tagMatch = line.match(TAG_RE);
         if(tagMatch) {
             const catName = tagMatch[2].toLowerCase();
@@ -240,11 +243,28 @@ class DateProcessor {
             }
         }
 
-        // Fall back to inline hex color
+        // Check for inline color override (hex or named) even when a category matched
+        if(catTagMatch) {
+            const withoutCat = line.replace(new RegExp('(^|[\\s])#' + this.escapeRegex(catTagMatch[2]) + '(?=\\s|$)'), '$1');
+            const hexOver = withoutCat.match(HEX_RE);
+            if(hexOver) {
+                color = '#' + hexOver[2];
+                inlineHexUsed = true;
+            } else {
+                const tagOver = withoutCat.match(TAG_RE);
+                if(tagOver) {
+                    const resolved = resolveNamedColor(tagOver[2]);
+                    if(resolved) { color = resolved; namedColorTag = tagOver; }
+                }
+            }
+        }
+
+        // Fall back to inline hex color (no category)
         if(!color) {
             const hexMatch = line.match(HEX_RE);
             if(hexMatch) {
                 color = '#' + hexMatch[2];
+                inlineHexUsed = true;
             }
         }
         if(!color) color = DEFAULT_COLOR;
@@ -276,11 +296,15 @@ class DateProcessor {
         }
         if(catTagMatch) {
             desc = desc.replace(new RegExp('(^|[\\s])#' + this.escapeRegex(catTagMatch[2]) + '(?=\\s|$)'), '$1');
-        } else if(namedColorTag) {
+        }
+        if(namedColorTag) {
             desc = desc.replace(new RegExp('(^|[\\s])#' + this.escapeRegex(namedColorTag[2]) + '(?=\\s|$)'), '$1');
-        } else {
-            // Strip inline hex if used
+        }
+        if(inlineHexUsed) {
             desc = desc.replace(HEX_RE, '$1');
+        }
+        if(!catTagMatch && !namedColorTag && !inlineHexUsed) {
+            // no tokens to strip
         }
         desc = desc.trim();
 
