@@ -32,6 +32,30 @@ body{font-family:system-ui,-apple-system,sans-serif;margin:0;padding:20px;line-h
 .tooltip-swatch{width:8px;height:8px;border-radius:50%;flex-shrink:0}
 .color-dots{display:flex;gap:2px;justify-content:center;margin-top:1px}
 .color-dot{width:6px;height:6px;border-radius:50%}
+.view-toggle{display:inline-flex;border:1px solid #ccc;border-radius:4px;overflow:hidden}
+.view-toggle button{padding:4px 12px;border:none;background:#fff;cursor:pointer;font-size:.9em;font-family:inherit;border-right:1px solid #ccc;color:#333}
+.view-toggle button:last-child{border-right:none}
+.view-toggle button.active{background:#3b82f6;color:#fff}
+.week-view{}
+.week-month-header{font-size:1.3em;font-weight:600;margin:24px 0 0;padding-top:18px;border-top:1px solid #ddd}
+.week-month-header:first-child{margin-top:0;padding-top:0;border-top:none}
+.week-dow-row{display:grid;grid-template-columns:repeat(7,1fr);gap:0;margin-top:8px}
+.week-dow-cell{text-align:center;font-size:.85em;font-weight:600;color:#666;padding:6px 0}
+.week-block{background:#fff;border-left:1px solid #e5e5e5;border-right:1px solid #e5e5e5;border-bottom:1px solid #e5e5e5;overflow:hidden}
+.week-block:first-of-type{border-top:1px solid #e5e5e5;border-radius:4px 4px 0 0}
+.week-block:last-of-type{border-radius:0 0 4px 4px}
+.week-block.week-block-first{border-top:1px solid #e5e5e5;border-radius:4px 4px 0 0}
+.week-block.week-block-last{border-radius:0 0 4px 4px}
+.week-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:0}
+.week-day-col{border-right:1px solid #f0f0f0;min-height:90px;display:flex;flex-direction:column}
+.week-day-col:last-child{border-right:none}
+.week-day-col.today{background:#fff7ed}
+.week-day-col.weekend{background:#fafbfc}
+.week-day-col.empty-day .week-day-num{color:#ccc}
+.week-day-col.other-month .week-day-num{color:#bbb}
+.week-day-num{padding:4px 6px;font-size:.85em;color:#555;font-variant-numeric:tabular-nums}
+.week-day-events{padding:2px 3px;display:flex;flex-direction:column;gap:2px;flex:1}
+.week-event{padding:2px 5px;border-radius:3px;font-size:.75em;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-shadow:0 0 2px rgba(0,0,0,.3)}
 </style>
 </head>
 <body>
@@ -42,6 +66,7 @@ body{font-family:system-ui,-apple-system,sans-serif;margin:0;padding:20px;line-h
 <textarea class="example-input" id="mainInput"></textarea>
 </div>
 <div class="controls">
+    <div class="view-toggle"><button id="viewCal" class="active">Calendar</button><button id="viewWeek">Week</button></div>
     <label>From <input type="month" id="startMonth"></label>
     <label>To <input type="month" id="endMonth"></label>
     <label><input type="checkbox" id="showToday"> Show today</label>
@@ -57,6 +82,14 @@ const PALETTE = ['#3b82f6','#e74c3c','#22c55e','#f59e0b','#a855f7','#14b8a6','#6
 const HEX_RE = /(^|[\s])#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})(?=\s|$)/;
 const TAG_RE = /(^|[\s])#([a-zA-Z_][\w-]*)(?=\s|$)/;
 const DATE_RE = /\d{4}-\d{2}-\d{2}/;
+
+function getMonday(date) {
+    const d = new Date(date);
+    d.setHours(12,0,0,0);
+    const day = d.getDay();
+    d.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
+    return d;
+}
 
 class DateProcessor {
     constructor() {
@@ -211,6 +244,11 @@ class DateProcessor {
         // Render legend
         this.renderLegend();
 
+        if(document.getElementById('viewWeek').classList.contains('active')) {
+            this.renderWeekView();
+            return;
+        }
+
         const startVal = document.getElementById('startMonth').value;
         const endVal = document.getElementById('endMonth').value;
         const showToday = document.getElementById('showToday').checked;
@@ -327,6 +365,84 @@ class DateProcessor {
             </div>`;
     }
 
+    renderWeekView() {
+        const showToday = document.getElementById('showToday').checked;
+        const todayStr = showToday ? this.formatDate(new Date()) : null;
+        const startVal = document.getElementById('startMonth').value;
+        const endVal = document.getElementById('endMonth').value;
+        const WDAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+
+        let weekMondays;
+        if(startVal && endVal) {
+            const [sy,sm] = startVal.split('-').map(Number);
+            const [ey,em] = endVal.split('-').map(Number);
+            const rangeStart = new Date(sy, sm-1, 1, 12);
+            const rangeEnd = new Date(ey, em, 0, 12);
+            weekMondays = [];
+            const mon = getMonday(rangeStart);
+            while(mon <= rangeEnd) {
+                weekMondays.push(new Date(mon));
+                mon.setDate(mon.getDate() + 7);
+            }
+        } else {
+            const mondayMap = new Map();
+            for(const dateStr of this.dateEntries.keys()) {
+                const d = new Date(dateStr + 'T12:00:00');
+                const mon = getMonday(d);
+                const monStr = this.formatDate(mon);
+                if(!mondayMap.has(monStr)) mondayMap.set(monStr, mon);
+            }
+            weekMondays = Array.from(mondayMap.values()).sort((a,b) => a - b);
+        }
+
+        if(weekMondays.length === 0) {
+            document.getElementById('calendars').innerHTML = '';
+            return;
+        }
+
+        let lastMonth = -1, lastYear = -1;
+        const dowRow = `<div class="week-dow-row">${WDAYS.map(d => `<div class="week-dow-cell">${d}</div>`).join('')}</div>`;
+        const html = weekMondays.map((monday, idx) => {
+            const monMonth = monday.getMonth();
+            const monYear = monday.getFullYear();
+            let prefix = '';
+            if(monMonth !== lastMonth || monYear !== lastYear) {
+                prefix = `<div class="week-month-header">${MONTHS[monMonth]} ${monYear}</div>${dowRow}`;
+                lastMonth = monMonth;
+                lastYear = monYear;
+            }
+            // Determine if this is first/last block in its month group
+            const nextMonday = idx < weekMondays.length - 1 ? weekMondays[idx + 1] : null;
+            const isLast = !nextMonday || nextMonday.getMonth() !== monMonth || nextMonday.getFullYear() !== monYear;
+            let blockCls = 'week-block';
+            if(prefix) blockCls += ' week-block-first';
+            if(isLast) blockCls += ' week-block-last';
+            const cols = [];
+            for(let i = 0; i < 7; i++) {
+                const day = new Date(monday);
+                day.setDate(day.getDate() + i);
+                const dateStr = this.formatDate(day);
+                const entries = this.dateEntries.get(dateStr) || [];
+                const isToday = dateStr === todayStr;
+                const isWeekend = i >= 5;
+                const isOtherMonth = day.getMonth() !== monMonth;
+                let cls = 'week-day-col';
+                if(isToday) cls += ' today';
+                if(isWeekend) cls += ' weekend';
+                if(!entries.length) cls += ' empty-day';
+                if(isOtherMonth) cls += ' other-month';
+                const evts = entries.map(e => {
+                    const label = e.description || e.line;
+                    return `<div class="week-event" style="background:${e.color}">${this.escapeHtml(label)}</div>`;
+                }).join('');
+                cols.push(`<div class="${cls}"><div class="week-day-num">${day.getDate()}</div><div class="week-day-events">${evts}</div></div>`);
+            }
+            return `${prefix}<div class="${blockCls}"><div class="week-grid">${cols.join('')}</div></div>`;
+        }).join('');
+
+        document.getElementById('calendars').innerHTML = `<div class="week-view">${html}</div>`;
+    }
+
     escapeHtml(str) {
         return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
@@ -360,6 +476,7 @@ function getState() {
     if(startMonth.value) s.s = startMonth.value;
     if(endMonth.value) s.e = endMonth.value;
     if(showTodayCheckbox.checked) s.d = true;
+    if(document.getElementById('viewWeek').classList.contains('active')) s.v = 'week';
     return s;
 }
 
@@ -369,11 +486,15 @@ function applyState(state) {
         startMonth.value = '';
         endMonth.value = '';
         showTodayCheckbox.checked = false;
+        document.getElementById('viewCal').classList.add('active');
+        document.getElementById('viewWeek').classList.remove('active');
     } else {
         textarea.value = state.t || '';
         startMonth.value = state.s || '';
         endMonth.value = state.e || '';
         showTodayCheckbox.checked = !!state.d;
+        document.getElementById('viewCal').classList.toggle('active', state.v !== 'week');
+        document.getElementById('viewWeek').classList.toggle('active', state.v === 'week');
     }
 }
 
@@ -445,6 +566,16 @@ textarea.addEventListener('input', () => { autoGrow(); scheduleUpdate(); });
 startMonth.addEventListener('input', scheduleUpdate);
 endMonth.addEventListener('input', scheduleUpdate);
 showTodayCheckbox.addEventListener('change', scheduleUpdate);
+document.getElementById('viewCal').addEventListener('click', function() {
+    this.classList.add('active');
+    document.getElementById('viewWeek').classList.remove('active');
+    scheduleUpdate();
+});
+document.getElementById('viewWeek').addEventListener('click', function() {
+    this.classList.add('active');
+    document.getElementById('viewCal').classList.remove('active');
+    scheduleUpdate();
+});
 
 // Handle back/forward navigation
 window.addEventListener('hashchange', async () => {
