@@ -18,6 +18,13 @@ body{font-family:system-ui,-apple-system,sans-serif;margin:0;padding:20px;line-h
 .help-panel.collapsed{display:none}
 .help-panel p{margin:0 0 10px}
 .help-panel code{background:#e8ecf0;padding:1px 4px;border-radius:3px;font-size:.9em}
+.help-palettes{display:flex;flex-wrap:wrap;gap:8px 16px;margin-bottom:10px}
+.help-palette{display:flex;align-items:center;gap:5px}
+.help-palette-name{font-size:.85em;font-family:'SF Mono',Monaco,Consolas,monospace;color:#555;min-width:52px}
+.help-palette-colors{display:flex;gap:2px}
+.help-palette-swatch{width:16px;height:16px;border-radius:3px;position:relative;cursor:default}
+.help-palette-swatch::after{content:attr(data-n);position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff;font-weight:600;opacity:0;transition:opacity .15s}
+.help-palette-swatch:hover::after{opacity:1}
 .help-example{background:#fff;border:1px solid #ddd;border-radius:4px;padding:10px;font-family:'SF Mono',Monaco,Consolas,monospace;font-size:.85em;white-space:pre;line-height:1.5;margin-top:10px;color:#555}
 .help-toggle{width:28px;height:28px;border-radius:50%;border:1px solid #ccc;background:#fff;cursor:pointer;font-size:.9em;font-weight:600;color:#666;display:flex;align-items:center;justify-content:center;flex-shrink:0;padding:0;line-height:1}
 .help-toggle:hover{background:#f0f0f0;color:#333}
@@ -69,15 +76,20 @@ body{font-family:system-ui,-apple-system,sans-serif;margin:0;padding:20px;line-h
 <div id="helpPanel" class="help-panel">
 <p>Shows on a calendar all dates covered (inclusive) by the entered dates or date ranges. Useful for visualizing missing data, schedules, or events.</p>
 <p>Enter date ranges below (one per line). Format: <code>YYYY-MM-DD</code> or <code>YYYY-MM-DD-YYYY-MM-DD</code>. Dates can appear anywhere in the line. Optionally add a color (<code>#rgb</code> or <code>#rrggbb</code>) and a description. Define reusable categories with <code>#name Label</code> on their own line (colors auto-assigned from a palette, or specify one with <code>#name #color Label</code>), then tag date lines with <code>#name</code>.</p>
+<p>Named colors (use <code>#name1</code>&ndash;<code>#name8</code>, e.g. <code>#earth3</code>):</p>
+<div id="helpPalettes" class="help-palettes"></div>
 <div class="help-example">#outage Outages
 #work Work
-#travel Travel
+#travel #earth3 Travel
+#alerts #ff0000 Alerts
 
 2026-01-15 #outage server outage
 #work 2026-02-01-2026-02-14 sprint 1
 2026-03-10
 report_2026-06-01-2026-06-30.csv
-#travel 2026-12-24-2026-12-31 holiday trip</div>
+#travel 2026-12-24-2026-12-31 holiday trip
+2026-04-01 #sunset5 conference
+2026-07-04 #c0392b fireworks</div>
 </div>
 <div class="example-box">
 <div class="example-header">Input <span class="example-hint">(edit below &mdash; calendar updates live)</span></div>
@@ -97,7 +109,31 @@ report_2026-06-01-2026-06-30.csv
 const DAYS = ['Mo','Tu','We','Th','Fr','Sa','Su'];
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const DEFAULT_COLOR = '#3b82f6';
-const PALETTE = ['#3b82f6','#e74c3c','#22c55e','#f59e0b','#a855f7','#14b8a6','#6366f1','#ec4899','#eab308','#6b7280'];
+const NAMED_PALETTES = {
+    pastels: ['#6aaddb','#db7070','#5cb874','#dbad5c','#9b70db','#50b8a0','#7080db','#db70a8'],
+    bold:    ['#3b82f6','#e74c3c','#22c55e','#f59e0b','#a855f7','#14b8a6','#6366f1','#ec4899'],
+    earth:   ['#b85c38','#8b7832','#5a8a42','#38887a','#9a6848','#a8883a','#6a7a48','#886858'],
+    ocean:   ['#2e7ab8','#1896a0','#1a7a6a','#4858b8','#2268a0','#0a8878','#3848a0','#186878'],
+    sunset:  ['#d84848','#d87838','#c8a028','#c84878','#b83858','#e86838','#a84888','#d85878'],
+    neon:    ['#f03e6e','#00b8d4','#76c800','#f07820','#8050f0','#00c880','#5060f0','#e040a0'],
+    tolmuted:   ['#332288','#882255','#AA4499','#CC6677','#117733','#44AA99','#999933','#661100'],
+    tolvibrant: ['#0077BB','#009988','#CC3311','#EE3377','#EE7733','#332288','#AA3377','#882255'],
+    okabeito:   ['#0072B2','#D55E00','#CC79A7','#009E73','#332288','#882255','#CC6677','#999933'],
+};
+const NAMED_COLORS = new Map();
+for (const [name, colors] of Object.entries(NAMED_PALETTES)) {
+    colors.forEach((hex, i) => NAMED_COLORS.set(name + (i + 1), hex));
+}
+function resolveNamedColor(tag) {
+    return NAMED_COLORS.get(tag.toLowerCase()) || null;
+}
+// Populate help palette swatches
+document.getElementById('helpPalettes').innerHTML = Object.entries(NAMED_PALETTES).map(([name, colors]) =>
+    `<div class="help-palette"><span class="help-palette-name">${name}</span><span class="help-palette-colors">${
+        colors.map((hex, i) => `<span class="help-palette-swatch" style="background:${hex}" data-n="${i+1}" title="#${name}${i+1}"></span>`).join('')
+    }</span></div>`
+).join('');
+const PALETTE = [...NAMED_PALETTES.bold, '#eab308', '#6b7280'];
 const HEX_RE = /(^|[\s])#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})(?=\s|$)/;
 const TAG_RE = /(^|[\s])#([a-zA-Z_][\w-]*)(?=\s|$)/;
 const DATE_RE = /\d{4}-\d{2}-\d{2}/;
@@ -154,17 +190,29 @@ class DateProcessor {
 
         const name = tagMatch[2].toLowerCase();
 
-        // Check for an explicit hex color (remove the tag first so #name isn't matched as hex)
+        // Check for an explicit hex color or named color (remove the tag first so #name isn't matched)
         const withoutTag = line.replace(new RegExp('(^|[\\s])#' + this.escapeRegex(tagMatch[2]) + '(?=\\s|$)'), '$1');
+        let color = null;
+        let colorTagName = null;
         const hexMatch = withoutTag.match(HEX_RE);
-        const color = hexMatch
-            ? '#' + hexMatch[2]
-            : PALETTE[this.categories.size % PALETTE.length];
+        if(hexMatch) {
+            color = '#' + hexMatch[2];
+        } else {
+            // Check for named color tags
+            const remaining = withoutTag;
+            const namedMatch = remaining.match(TAG_RE);
+            if(namedMatch) {
+                const resolved = resolveNamedColor(namedMatch[2]);
+                if(resolved) { color = resolved; colorTagName = namedMatch[2]; }
+            }
+        }
+        if(!color) color = PALETTE[this.categories.size % PALETTE.length];
 
-        // Label is everything left after removing tag and hex tokens
+        // Label is everything left after removing tag, hex, and named color tokens
         let label = line;
         label = label.replace(new RegExp('(^|[\\s])#' + this.escapeRegex(tagMatch[2]) + '(?=\\s|$)'), '$1');
         if(hexMatch) label = label.replace(HEX_RE, '$1');
+        if(colorTagName) label = label.replace(new RegExp('(^|[\\s])#' + this.escapeRegex(colorTagName) + '(?=\\s|$)'), '$1');
         label = label.trim();
 
         return { name, color, label: label || name };
@@ -174,6 +222,7 @@ class DateProcessor {
         // Check for a category tag
         let color = null;
         let catTagMatch = null;
+        let namedColorTag = null;
         const tagMatch = line.match(TAG_RE);
         if(tagMatch) {
             const catName = tagMatch[2].toLowerCase();
@@ -181,6 +230,13 @@ class DateProcessor {
             if(cat) {
                 color = cat.color;
                 catTagMatch = tagMatch;
+            } else {
+                // Check if tag is a named color
+                const resolved = resolveNamedColor(catName);
+                if(resolved) {
+                    color = resolved;
+                    namedColorTag = tagMatch;
+                }
             }
         }
 
@@ -220,6 +276,8 @@ class DateProcessor {
         }
         if(catTagMatch) {
             desc = desc.replace(new RegExp('(^|[\\s])#' + this.escapeRegex(catTagMatch[2]) + '(?=\\s|$)'), '$1');
+        } else if(namedColorTag) {
+            desc = desc.replace(new RegExp('(^|[\\s])#' + this.escapeRegex(namedColorTag[2]) + '(?=\\s|$)'), '$1');
         } else {
             // Strip inline hex if used
             desc = desc.replace(HEX_RE, '$1');
