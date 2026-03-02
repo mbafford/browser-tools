@@ -14,7 +14,14 @@ body{font-family:system-ui,-apple-system,sans-serif;margin:0;padding:20px;line-h
 .day.empty{visibility:hidden}
 .weekday{text-align:center;font-size:.9em;color:#666;padding:4px}
 .year-header{text-align:center;font-size:1.5em;font-weight:600;margin:30px 0 10px;padding-top:20px;border-top:1px solid #eee}
-.instructions{background:#f8f9fa;padding:15px;border-radius:4px;margin-bottom:20px}
+.help-panel{background:#f8f9fa;padding:15px;border-radius:4px;margin-bottom:20px}
+.help-panel.collapsed{display:none}
+.help-panel p{margin:0 0 10px}
+.help-panel code{background:#e8ecf0;padding:1px 4px;border-radius:3px;font-size:.9em}
+.help-example{background:#fff;border:1px solid #ddd;border-radius:4px;padding:10px;font-family:'SF Mono',Monaco,Consolas,monospace;font-size:.85em;white-space:pre;line-height:1.5;margin-top:10px;color:#555}
+.help-toggle{width:28px;height:28px;border-radius:50%;border:1px solid #ccc;background:#fff;cursor:pointer;font-size:.9em;font-weight:600;color:#666;display:flex;align-items:center;justify-content:center;flex-shrink:0;padding:0;line-height:1}
+.help-toggle:hover{background:#f0f0f0;color:#333}
+.help-toggle.active{background:#3b82f6;color:#fff;border-color:#3b82f6}
 .example-box{background:#f0f4ff;border:1px solid #c7d4f0;padding:15px;border-radius:4px;margin-bottom:20px}
 .example-header{font-weight:600;margin-bottom:8px}
 .example-hint{font-weight:400;color:#666;font-size:.85em}
@@ -59,13 +66,25 @@ body{font-family:system-ui,-apple-system,sans-serif;margin:0;padding:20px;line-h
 </style>
 </head>
 <body>
-<div class="instructions">Shows on a calendar all of the dates covered (inclusive) by the entered dates or date ranges. Useful for visualizing missing data, schedules, or events.</div>
-<div class="instructions">Enter date ranges below (one per line). Format: <code>YYYY-MM-DD</code> or <code>YYYY-MM-DD-YYYY-MM-DD</code>. Dates can appear anywhere in the line. Optionally add a color (<code>#rgb</code> or <code>#rrggbb</code>) and a description. Define reusable categories with <code>#name Label</code> on their own line (colors auto-assigned from a palette, or specify one with <code>#name #color Label</code>), then tag date lines with <code>#name</code>.</div>
+<div id="helpPanel" class="help-panel">
+<p>Shows on a calendar all dates covered (inclusive) by the entered dates or date ranges. Useful for visualizing missing data, schedules, or events.</p>
+<p>Enter date ranges below (one per line). Format: <code>YYYY-MM-DD</code> or <code>YYYY-MM-DD-YYYY-MM-DD</code>. Dates can appear anywhere in the line. Optionally add a color (<code>#rgb</code> or <code>#rrggbb</code>) and a description. Define reusable categories with <code>#name Label</code> on their own line (colors auto-assigned from a palette, or specify one with <code>#name #color Label</code>), then tag date lines with <code>#name</code>.</p>
+<div class="help-example">#outage Outages
+#work Work
+#travel Travel
+
+2026-01-15 #outage server outage
+#work 2026-02-01-2026-02-14 sprint 1
+2026-03-10
+report_2026-06-01-2026-06-30.csv
+#travel 2026-12-24-2026-12-31 holiday trip</div>
+</div>
 <div class="example-box">
 <div class="example-header">Input <span class="example-hint">(edit below &mdash; calendar updates live)</span></div>
 <textarea class="example-input" id="mainInput"></textarea>
 </div>
 <div class="controls">
+    <button id="helpToggle" class="help-toggle" title="Help">?</button>
     <div class="view-toggle"><button id="viewCal" class="active">Calendar</button><button id="viewWeek">Week</button></div>
     <label>From <input type="month" id="startMonth"></label>
     <label>To <input type="month" id="endMonth"></label>
@@ -460,15 +479,17 @@ const startMonth = document.getElementById('startMonth');
 const endMonth = document.getElementById('endMonth');
 const showTodayCheckbox = document.getElementById('showToday');
 
-const EXAMPLE_CONTENT = `#outage Outages
-#work Work
-#travel Travel
+// --- Help panel collapse/expand ---
+const helpPanel = document.getElementById('helpPanel');
+const helpToggle = document.getElementById('helpToggle');
+const HELP_KEY = 'dates2cal-help-collapsed';
 
-2026-01-15 #outage server outage
-#work 2026-02-01-2026-02-14 sprint 1
-2026-03-10
-report_2026-06-01-2026-06-30.csv
-#travel 2026-12-24-2026-12-31 holiday trip`;
+function setHelp(show) {
+    helpPanel.classList.toggle('collapsed', !show);
+    helpToggle.classList.toggle('active', show);
+    try { localStorage.setItem(HELP_KEY, show ? '' : '1'); } catch(e) {}
+}
+helpToggle.addEventListener('click', () => setHelp(helpPanel.classList.contains('collapsed')));
 
 // --- State encode/decode for URL hash (deflate-raw + base64url) ---
 function getState() {
@@ -594,15 +615,20 @@ window.addEventListener('hashchange', async () => {
 // On page load
 (async () => {
     const hash = location.hash.slice(1);
+    let hasUrlContent = false;
     if(hash) {
         try {
             applyState(await decompressFromHash(hash));
+            hasUrlContent = true;
         } catch(e) {
             applyState(decodeURIComponent(hash));
+            hasUrlContent = true;
         }
-    } else {
-        textarea.value = EXAMPLE_CONTENT;
     }
+    // Collapse help if previously collapsed or if page was shared with URL content
+    let prevCollapsed = false;
+    try { prevCollapsed = localStorage.getItem(HELP_KEY) === '1'; } catch(e) {}
+    setHelp(!prevCollapsed && !hasUrlContent);
     autoGrow();
     processor.parseInput(textarea.value);
 })();
