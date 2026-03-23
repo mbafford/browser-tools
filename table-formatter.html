@@ -5,8 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Table Format Converter</title>
     <style>
-    /* Previous styles remain the same */
-    body {
+        body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             max-width: 1200px;
             margin: 2rem auto;
@@ -41,8 +40,9 @@
         .controls {
             display: flex;
             align-items: center;
-            gap: 1rem;
+            gap: 0.5rem;
             margin: 1rem 0;
+            flex-wrap: wrap;
         }
         .toggle {
             display: flex;
@@ -142,9 +142,15 @@
             border: 1px solid #9ae6b4;
         }
         @keyframes fadeOut {
-            0% { opacity: 1; }
-            70% { opacity: 1; }
-            100% { opacity: 0; }
+            0% {
+                opacity: 1;
+            }
+            70% {
+                opacity: 1;
+            }
+            100% {
+                opacity: 0;
+            }
         }
     </style>
 </head>
@@ -152,20 +158,25 @@
     <div class="container">
         <h1>Table Format Converter</h1>
         <p>Paste a table from any application or drag & drop a CSV/TSV file</p>
+
         <div id="dropzone" class="dropzone">
             <p>Click or paste here</p>
         </div>
-        <div id="message"></div>
+
         <div class="controls">
             <label class="toggle">
-                <span>Has Header</span>
-                <label class="switch">
+                <span class="switch">
                     <input type="checkbox" id="headerToggle" checked onchange="toggleHeader()">
                     <span class="slider"></span>
-                </label>
+                </span>
+                Has Header
             </label>
-            <button id="copyButton" onclick="copyAllFormats()" disabled>Copy Table</button>
+            <button class="copy-btn" onclick="copyTable('markdown')" disabled>Copy Markdown</button>
+            <button class="copy-btn" onclick="copyTable('csv')" disabled>Copy CSV</button>
+            <button class="copy-btn" onclick="copyTable('tsv')" disabled>Copy TSV</button>
         </div>
+
+        <div id="message"></div>
         <div id="preview"></div>
     </div>
 
@@ -175,8 +186,58 @@
 
         function showMessage(text, isError = false) {
             const message = document.getElementById('message');
-            message.className = `message ${isError ? 'error' : 'success'}`;
+            message.className = '';
             message.textContent = text;
+            // Force reflow to restart animation
+            void message.offsetWidth;
+            message.className = `message ${isError ? 'error' : 'success'}`;
+        }
+
+        function isBoxDrawingTable(input) {
+            return /[┌┐└┘├┤┬┴┼─│]/.test(input);
+        }
+
+        function parseBoxTable(input) {
+            const lines = input.split('\n');
+            rawData = [];
+            for (const line of lines) {
+                const trimmed = line.trim();
+                // Skip border lines (top, middle separators, bottom)
+                if (/^[┌├└][─┬┼┴┐┤┘─]*$/.test(trimmed)) continue;
+                // Skip empty lines
+                if (!trimmed) continue;
+                // Data rows start and end with │
+                if (trimmed.startsWith('│') && trimmed.endsWith('│')) {
+                    // Split by │, drop first empty and last empty
+                    const cells = trimmed.split('│');
+                    cells.shift(); // remove leading empty
+                    cells.pop();   // remove trailing empty
+                    rawData.push(cells.map(c => c.trim()));
+                }
+            }
+        }
+
+        function isAsciiTable(input) {
+            return /^\s*\+[-+]+\+\s*$/m.test(input);
+        }
+
+        function parseAsciiTable(input) {
+            const lines = input.split('\n');
+            rawData = [];
+            for (const line of lines) {
+                const trimmed = line.trim();
+                // Skip border lines (+---+---+)
+                if (/^\+[-+]+\+$/.test(trimmed)) continue;
+                // Skip empty lines
+                if (!trimmed) continue;
+                // Data rows start and end with |
+                if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
+                    const cells = trimmed.split('|');
+                    cells.shift();
+                    cells.pop();
+                    rawData.push(cells.map(c => c.trim()));
+                }
+            }
         }
 
         function detectAndConvert(input) {
@@ -194,6 +255,18 @@
                     parseHtmlTable(table);
                     return true;
                 }
+            }
+
+            // Check for Unicode box-drawing table (before markdown, since both have vertical bars)
+            if (isBoxDrawingTable(input)) {
+                parseBoxTable(input);
+                return rawData.length > 0;
+            }
+
+            // Check for ASCII/MySQL table (+---+---+ borders)
+            if (isAsciiTable(input)) {
+                parseAsciiTable(input);
+                return rawData.length > 0;
             }
 
             // Check for Markdown table
@@ -225,17 +298,12 @@
         function parseMarkdownTable(input) {
             const lines = input.split('\n')
                 .map(line => line.trim())
-                .filter(line => line && !line.match(/^\s*[-:|\s]+$/)); // Remove separator rows
+                .filter(line => line && !line.match(/^[\s\-:|]+$/));
 
             rawData = lines.map(line => {
-                // Split by pipe but keep empty cells
                 const cells = line.split('|');
-
-                // Remove first and last empty cells from edge pipes
                 if (cells[0].trim() === '') cells.shift();
                 if (cells[cells.length - 1].trim() === '') cells.pop();
-
-                // Preserve empty cells but trim non-empty ones
                 return cells.map(cell => cell.trim());
             });
         }
@@ -247,32 +315,27 @@
                 ',': (firstLine.match(/,/g) || []).length,
                 ';': (firstLine.match(/;/g) || []).length
             };
-            
-            // Find the delimiter with the most occurrences
+
             const maxDelimiter = Object.entries(delimiters)
-                .reduce((max, [delimiter, count]) => 
-                    count > max[1] ? [delimiter, count] : max, 
+                .reduce((max, [delimiter, count]) =>
+                    count > max[1] ? [delimiter, count] : max,
                     ['', 0]
                 );
-            
-            return maxDelimiter[0] || ','; // Default to comma if no delimiter found
+            return maxDelimiter[0] || ',';
         }
 
         function parseDelimitedText(input) {
             const delimiter = detectDelimiter(input);
-            
-            // Handle quoted values and escape characters
+
             function parseLine(line) {
                 const values = [];
                 let inQuotes = false;
                 let currentValue = '';
-                
                 for (let i = 0; i < line.length; i++) {
                     const char = line[i];
-                    
                     if (char === '"' && line[i + 1] === '"') {
                         currentValue += '"';
-                        i++; // Skip next quote
+                        i++;
                     } else if (char === '"') {
                         inQuotes = !inQuotes;
                     } else if (char === delimiter && !inQuotes) {
@@ -282,8 +345,7 @@
                         currentValue += char;
                     }
                 }
-                
-                values.push(currentValue.trim()); // Push the last value
+                values.push(currentValue.trim());
                 return values;
             }
 
@@ -306,15 +368,15 @@
         function generateHtmlTable() {
             const headers = getHeaders();
             const data = getData();
-            
+            const cellStyle = 'border:1px solid #999;padding:4px 8px';
             return `
-                <table>
+                <table style="border-collapse:collapse">
                     <thead>
-                        <tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>
+                        <tr>${headers.map(h => `<th style="${cellStyle};background:#f5f5f5">${h}</th>`).join('')}</tr>
                     </thead>
                     <tbody>
-                        ${data.map(row => 
-                            `<tr>${row.map(cell => `<td>${cell}</td>`).join('')}</tr>`
+                        ${data.map(row =>
+                            `<tr>${row.map(cell => `<td style="${cellStyle}">${cell}</td>`).join('')}</tr>`
                         ).join('')}
                     </tbody>
                 </table>
@@ -324,11 +386,9 @@
         function generateMarkdownTable() {
             const headers = getHeaders();
             const data = getData();
-            
             const headerRow = `| ${headers.join(' | ')} |`;
             const separator = `| ${headers.map(() => '---').join(' | ')} |`;
             const dataRows = data.map(row => {
-                // Pad the row if it's shorter than headers
                 const paddedRow = [...row];
                 while (paddedRow.length < headers.length) {
                     paddedRow.push('');
@@ -338,19 +398,49 @@
             return [headerRow, separator, ...dataRows].join('\n');
         }
 
-        function copyAllFormats() {
+        function generateCsv() {
+            const headers = getHeaders();
+            const data = getData();
+            const allRows = [headers, ...data];
+            return allRows.map(row =>
+                row.map(cell => {
+                    if (/[,"\n\r]/.test(cell)) {
+                        return '"' + cell.replace(/"/g, '""') + '"';
+                    }
+                    return cell;
+                }).join(',')
+            ).join('\n');
+        }
+
+        function generateTsv() {
+            const headers = getHeaders();
+            const data = getData();
+            const allRows = [headers, ...data];
+            return allRows.map(row => row.join('\t')).join('\n');
+        }
+
+        function copyTable(format) {
             if (!rawData.length) {
                 showMessage('No table data to copy!', true);
                 return;
             }
 
-            const clipboardItem = new ClipboardItem({
-                'text/html': new Blob([generateHtmlTable()], { type: 'text/html' }),
-                'text/plain': new Blob([generateMarkdownTable()], { type: 'text/plain' })
-            });
-            
-            navigator.clipboard.write([clipboardItem]).then(() => {
-                showMessage('Table copied! You can now paste it anywhere.');
+            const generators = {
+                markdown: generateMarkdownTable,
+                html: generateHtmlTable,
+                csv: generateCsv,
+                tsv: generateTsv
+            };
+
+            const text = generators[format]();
+            const html = generateHtmlTable();
+            const writePromise = navigator.clipboard.write([new ClipboardItem({
+                'text/plain': new Blob([text], { type: 'text/plain' }),
+                'text/html': new Blob([html], { type: 'text/html' })
+            })]);
+
+            writePromise.then(() => {
+                showMessage(`Copied as ${format.toUpperCase()}!`);
             }).catch(err => {
                 showMessage('Failed to copy: ' + err, true);
             });
@@ -359,7 +449,7 @@
         function renderPreview() {
             const preview = document.getElementById('preview');
             preview.innerHTML = generateHtmlTable();
-            document.getElementById('copyButton').disabled = false;
+            document.querySelectorAll('.copy-btn').forEach(btn => btn.disabled = false);
         }
 
         function toggleHeader() {
@@ -372,15 +462,15 @@
         // Handle paste events
         document.addEventListener('paste', (e) => {
             e.preventDefault();
+            const html = e.clipboardData.getData('text/html');
             const text = e.clipboardData.getData('text/plain');
-            if (detectAndConvert(text)) {
+            if ((html && detectAndConvert(html)) || detectAndConvert(text)) {
                 renderPreview();
             }
         });
 
         // Setup dropzone
         const dropzone = document.getElementById('dropzone');
-
         dropzone.addEventListener('click', () => {
             navigator.clipboard.readText().then(text => {
                 if (detectAndConvert(text)) {
@@ -403,7 +493,6 @@
         dropzone.addEventListener('drop', (e) => {
             e.preventDefault();
             dropzone.classList.remove('dragover');
-            
             const file = e.dataTransfer.files[0];
             if (file) {
                 const reader = new FileReader();
