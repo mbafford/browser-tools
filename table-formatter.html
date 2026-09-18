@@ -386,15 +386,34 @@
         function generateMarkdownTable() {
             const headers = getHeaders();
             const data = getData();
-            const headerRow = `| ${headers.join(' | ')} |`;
-            const separator = `| ${headers.map(() => '---').join(' | ')} |`;
-            const dataRows = data.map(row => {
-                const paddedRow = [...row];
-                while (paddedRow.length < headers.length) {
-                    paddedRow.push('');
+            const colCount = headers.length;
+
+            // Normalize every row to the full column count.
+            const normalize = row => {
+                const padded = [...row];
+                while (padded.length < colCount) padded.push('');
+                return padded.slice(0, colCount);
+            };
+
+            const rows = [normalize(headers), ...data.map(normalize)];
+
+            // Compute the widest cell in each column (min width 3 for the '---' separator).
+            const widths = [];
+            for (let c = 0; c < colCount; c++) {
+                let max = 3;
+                for (const row of rows) {
+                    max = Math.max(max, row[c].length);
                 }
-                return `| ${paddedRow.join(' | ')} |`;
-            });
+                widths[c] = max;
+            }
+
+            const padCell = (cell, width) => cell + ' '.repeat(width - cell.length);
+            const formatRow = row => `| ${row.map((cell, c) => padCell(cell, widths[c])).join(' | ')} |`;
+
+            const headerRow = formatRow(normalize(headers));
+            const separator = `| ${widths.map(w => '-'.repeat(w)).join(' | ')} |`;
+            const dataRows = data.map(row => formatRow(normalize(row)));
+
             return [headerRow, separator, ...dataRows].join('\n');
         }
 
